@@ -3,476 +3,686 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
+import { useToast } from '../components/ToastProvider';
+import {
+  Users,
+  Shield,
+  ShieldCheck,
+  KeyRound,
+  UserPlus,
+  Search,
+  Check,
+  CheckSquare,
+  Square,
+  Edit,
+  Trash2,
+  Lock,
+  Sparkles,
+  LayoutDashboard,
+  LineChart,
+  BarChart3,
+  Package,
+  Boxes,
+  ArrowLeftRight,
+  Building2,
+  ShoppingCart,
+  Receipt,
+  Users2,
+  CreditCard,
+  Newspaper,
+  Wallet,
+} from 'lucide-react';
+
+const ALL_SYSTEM_MODULES = [
+  { key: 'dashboard', label: 'Overview & Insights', category: 'Analytics', icon: LayoutDashboard, desc: 'View store KPI dashboard & metrics' },
+  { key: 'financialReports', label: 'Financial Reports', category: 'Analytics', icon: LineChart, desc: 'Access P&L, balance and financial sheets' },
+  { key: 'reports', label: 'Reports & Analytics', category: 'Analytics', icon: BarChart3, desc: 'Sales, operational & inventory reports' },
+  { key: 'products', label: 'Products Catalogue', category: 'Operations', icon: Package, desc: 'Manage master items, prices & categories' },
+  { key: 'inventory', label: 'Inventory Management', category: 'Operations', icon: Boxes, desc: 'Track stock, reorder levels & adjustments' },
+  { key: 'stockTransfers', label: 'Stock Transfers', category: 'Operations', icon: ArrowLeftRight, desc: 'Transfer goods between store locations' },
+  { key: 'suppliers', label: 'Suppliers & Vendors', category: 'Operations', icon: Building2, desc: 'Manage supplier contacts & procurement' },
+  { key: 'pos', label: 'POS Cashier Terminal', category: 'Sales', icon: ShoppingCart, desc: 'Process customer checkouts & barcode scans' },
+  { key: 'sales', label: 'Sales Orders', category: 'Sales', icon: Receipt, desc: 'View completed sales receipts & history' },
+  { key: 'customers', label: 'Customer Management', category: 'Sales', icon: Users2, desc: 'Customer accounts, profiles & loyalty' },
+  { key: 'payments', label: 'Payments', category: 'Sales', icon: CreditCard, desc: 'Record and verify customer payments' },
+  { key: 'cms', label: 'CMS & Announcements', category: 'Marketing', icon: Newspaper, desc: 'Publish store news, flyers & promotional deals' },
+  { key: 'expenses', label: 'Expenses & Overhead', category: 'Admin', icon: Wallet, desc: 'Log operational expenses & invoices' },
+  { key: 'users', label: 'User & Permissions', category: 'Admin', icon: ShieldCheck, desc: 'Manage staff accounts and sidebar access' },
+];
+
+const ROLE_DEFAULT_PRESETS = {
+  owner: ['dashboard', 'financialReports', 'reports', 'products', 'inventory', 'stockTransfers', 'suppliers', 'pos', 'sales', 'customers', 'payments', 'cms', 'expenses', 'users'],
+  admin: ['dashboard', 'reports', 'products', 'inventory', 'suppliers', 'pos', 'sales', 'customers', 'cms', 'users'],
+  manager: ['dashboard', 'reports', 'inventory', 'suppliers', 'pos', 'sales', 'customers', 'cms'],
+  cashier: ['pos', 'sales', 'customers'],
+  warehouse_staff: ['inventory', 'stockTransfers', 'suppliers'],
+  accountant: ['dashboard', 'financialReports', 'payments', 'expenses', 'suppliers'],
+};
 
 export default function UsersPage() {
+  const toast = useToast();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState(null);
-  const [formOpen, setFormOpen] = useState(false);
   const [search, setSearch] = useState('');
+  const [roleFilter, setRoleFilter] = useState('all');
 
-  async function load() {
+  // Modals
+  const [formOpen, setFormOpen] = useState(false);
+  const [editingUser, setEditingUser] = useState(null);
+  const [permissionsModalOpen, setPermissionsModalOpen] = useState(false);
+  const [userForPermissions, setUserForPermissions] = useState(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [userToDelete, setUserToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function loadUsers() {
     setLoading(true);
-
     try {
       const data = await apiFetch('/users');
-      setUsers(data);
+      setUsers(Array.isArray(data) ? data : []);
     } catch (err) {
       console.error(err);
+      toast.error('Error', err.message || 'Failed to load users.');
     } finally {
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    load();
+    loadUsers();
   }, []);
 
-  function openNew() {
-    setEditing({});
+  function handleOpenNew() {
+    setEditingUser(null);
     setFormOpen(true);
   }
 
-  function openEdit(user) {
-    setEditing(user);
+  function handleOpenEdit(user) {
+    setEditingUser(user);
     setFormOpen(true);
   }
 
-  async function remove(id) {
-    if (!confirm('Are you sure you want to delete this user?')) return;
+  function handleOpenPermissions(user) {
+    setUserForPermissions(user);
+    setPermissionsModalOpen(true);
+  }
 
+  function handleOpenDelete(user) {
+    setUserToDelete(user);
+    setDeleteConfirmOpen(true);
+  }
+
+  async function confirmDelete() {
+    if (!userToDelete) return;
+    setDeleting(true);
     try {
-      await apiFetch(`/users/${id}`, {
+      await apiFetch(`/users/${userToDelete.id || userToDelete._id}`, {
         method: 'DELETE',
       });
-
-      load();
+      toast.success('User Deleted', `Account for "${userToDelete.name}" removed.`);
+      setDeleteConfirmOpen(false);
+      setUserToDelete(null);
+      loadUsers();
     } catch (err) {
-      alert(err?.message || 'Failed to delete user');
+      toast.error('Delete Failed', err.message || 'Could not delete user.');
+    } finally {
+      setDeleting(false);
     }
   }
 
   const filteredUsers = useMemo(() => {
-    const query = search.toLowerCase().trim();
+    return users.filter((u) => {
+      const q = search.toLowerCase().trim();
+      const matchSearch =
+        !q ||
+        (u.name && u.name.toLowerCase().includes(q)) ||
+        (u.email && u.email.toLowerCase().includes(q)) ||
+        (u.role && u.role.toLowerCase().includes(q));
 
-    if (!query) return users;
+      const matchRole = roleFilter === 'all' || u.role === roleFilter;
 
-    return users.filter(
-      (user) =>
-        user.name?.toLowerCase().includes(query) ||
-        user.email?.toLowerCase().includes(query) ||
-        user.role?.toLowerCase().includes(query)
-    );
-  }, [users, search]);
+      return matchSearch && matchRole;
+    });
+  }, [users, search, roleFilter]);
+
+  const stats = useMemo(() => {
+    const total = users.length;
+    const managers = users.filter((u) => u.role === 'manager').length;
+    const cashiers = users.filter((u) => u.role === 'cashier' || u.role === 'warehouse_staff').length;
+    const customPermsCount = users.filter((u) => u.permissions && u.permissions.length > 0).length;
+    return { total, managers, cashiers, customPermsCount };
+  }, [users]);
 
   return (
     <ModuleLayout
-      title="Users"
-      subtitle="Manage users, roles and system access"
+      title="User & Access Control"
+      subtitle="Configure staff credentials, assign roles, and customize individual sidebar module permissions."
       allowedRoles={['owner', 'admin']}
       headerActions={
         <button
-          onClick={openNew}
-          className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-700 focus:outline-none focus:ring-4 focus:ring-emerald-500/20"
+          onClick={handleOpenNew}
+          className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98]"
         >
-          <span className="text-lg leading-none">+</span>
-          New user
+          <UserPlus className="h-4 w-4" />
+          <span>Add Staff Member</span>
         </button>
       }
     >
-      <div className="space-y-5">
-
-        {/* Stats */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="space-y-6">
+        {/* KPI Summary Cards */}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
           <StatCard
-            label="Total users"
-            value={users.length}
-            icon="users"
+            label="Total Staff Accounts"
+            value={stats.total}
+            subtitle="Registered ERP users"
+            icon={Users}
+            accent="emerald"
           />
-
           <StatCard
-            label="Active roles"
-            value={new Set(users.map((user) => user.role)).size}
-            icon="shield"
+            label="Store Managers"
+            value={stats.managers}
+            subtitle="Department supervisors"
+            icon={Shield}
+            accent="amber"
           />
-
           <StatCard
-            label="Administrators"
-            value={
-              users.filter(
-                (user) =>
-                  user.role === 'owner' || user.role === 'admin'
-              ).length
-            }
-            icon="admin"
+            label="Frontline Staff"
+            value={stats.cashiers}
+            subtitle="Cashiers & warehouse"
+            icon={KeyRound}
+            accent="sky"
+          />
+          <StatCard
+            label="Custom Permission Grants"
+            value={stats.customPermsCount}
+            subtitle="Individual access profiles"
+            icon={ShieldCheck}
+            accent="purple"
           />
         </div>
 
-        {/* Main Card */}
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-
+        {/* User Directory Container */}
+        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           {/* Toolbar */}
-          <div className="flex flex-col gap-4 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h2 className="text-sm font-semibold text-slate-900">
-                All users
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {filteredUsers.length} user
-                {filteredUsers.length !== 1 ? 's' : ''} found
-              </p>
-            </div>
-
-            <div className="relative w-full sm:w-72">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                ⌕
-              </span>
-
+          <div className="flex flex-col gap-3 border-b border-slate-100 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="relative flex-1">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search users..."
+                placeholder="Search staff by name, email, or role..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                className="w-full rounded-lg border border-slate-200 bg-slate-50 py-2.5 pl-9 pr-3 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-500 focus:bg-white focus:ring-4 focus:ring-emerald-500/10"
+                className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-900 placeholder-slate-400 outline-none transition focus:border-emerald-500 focus:bg-white focus:ring-2 focus:ring-emerald-100"
               />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Filter Role:</label>
+              <select
+                value={roleFilter}
+                onChange={(e) => setRoleFilter(e.target.value)}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none"
+              >
+                <option value="all">All Roles</option>
+                <option value="owner">Owner</option>
+                <option value="admin">Admin</option>
+                <option value="manager">Manager</option>
+                <option value="cashier">Cashier</option>
+                <option value="warehouse_staff">Warehouse Staff</option>
+                <option value="accountant">Accountant</option>
+              </select>
             </div>
           </div>
 
           {/* Table */}
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] text-left">
-              <thead>
-                <tr className="border-b border-slate-100 bg-slate-50/70">
-                  <th className="px-6 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    User
-                  </th>
-
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Email
-                  </th>
-
-                  <th className="px-4 py-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Role
-                  </th>
-
-                  <th className="px-6 py-3 text-right text-xs font-semibold uppercase tracking-wide text-slate-500">
-                    Actions
-                  </th>
+            <table className="w-full text-left text-sm text-slate-600">
+              <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                <tr>
+                  <th className="px-6 py-3.5">Staff Member</th>
+                  <th className="px-5 py-3.5">Email Address</th>
+                  <th className="px-5 py-3.5">Base Role</th>
+                  <th className="px-5 py-3.5">Sidebar Permissions</th>
+                  <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
               </thead>
-
-              <tbody>
+              <tbody className="divide-y divide-slate-100">
                 {loading ? (
-                  <LoadingRows />
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                      <div className="flex items-center justify-center gap-2">
+                        <span className="animate-spin text-lg">↻</span>
+                        <span>Loading staff directory...</span>
+                      </div>
+                    </td>
+                  </tr>
                 ) : filteredUsers.length === 0 ? (
-                  <EmptyState search={search} onCreate={openNew} />
+                  <tr>
+                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                      No staff users found matching your search.
+                    </td>
+                  </tr>
                 ) : (
-                  filteredUsers.map((user) => (
-                    <UserRow
-                      key={user._id}
-                      user={user}
-                      onEdit={() => openEdit(user)}
-                      onDelete={() => remove(user._id)}
-                    />
-                  ))
+                  filteredUsers.map((u) => {
+                    const initials = u.name ? u.name.substring(0, 2).toUpperCase() : 'US';
+                    const activePerms = u.permissions?.length
+                      ? u.permissions
+                      : ROLE_DEFAULT_PRESETS[u.role] || [];
+                    const isCustom = u.permissions && u.permissions.length > 0;
+
+                    return (
+                      <tr key={u.id || u._id} className="transition hover:bg-slate-50/60">
+                        {/* Member Info */}
+                        <td className="px-6 py-4">
+                          <div className="flex items-center gap-3">
+                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-xs font-bold text-white shadow-sm">
+                              {initials}
+                            </div>
+                            <div>
+                              <p className="font-bold text-slate-900">{u.name}</p>
+                              <p className="text-[11px] text-slate-400 font-mono">ID: {(u.id || u._id)?.slice(-6)}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Email */}
+                        <td className="px-5 py-4 text-slate-700 font-medium">{u.email}</td>
+
+                        {/* Role */}
+                        <td className="px-5 py-4">
+                          <RoleBadge role={u.role} />
+                        </td>
+
+                        {/* Permissions Summary */}
+                        <td className="px-5 py-4">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-xs font-bold text-emerald-800 border border-emerald-200">
+                              {activePerms.length} modules granted
+                            </span>
+                            {isCustom && (
+                              <span className="rounded-full bg-purple-50 px-2 py-0.5 text-[10px] font-bold text-purple-700 border border-purple-200" title="Custom per-user override">
+                                Custom Override
+                              </span>
+                            )}
+                          </div>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="px-6 py-4 text-right">
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              onClick={() => handleOpenPermissions(u)}
+                              className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100 active:scale-95"
+                              title="Customize Sidebar Permissions"
+                            >
+                              <KeyRound className="h-3.5 w-3.5" />
+                              <span>Manage Permissions</span>
+                            </button>
+
+                            <button
+                              onClick={() => handleOpenEdit(u)}
+                              className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-600 transition hover:border-slate-300 hover:bg-slate-50"
+                              title="Edit User Info"
+                            >
+                              <Edit className="h-4 w-4" />
+                            </button>
+
+                            <button
+                              onClick={() => handleOpenDelete(u)}
+                              className="rounded-xl border border-slate-200 bg-white p-1.5 text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
+                              title="Delete User"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
           </div>
+
+          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-3 text-xs text-slate-500">
+            <span>Showing {filteredUsers.length} staff members</span>
+            <span>Role-based access control active</span>
+          </div>
         </div>
       </div>
 
-      {/* Modal */}
-      {formOpen && (
-        <UserForm
-          initial={editing}
+      {/* Permissions Modal */}
+      {permissionsModalOpen && userForPermissions && (
+        <PermissionsModal
+          user={userForPermissions}
           onClose={() => {
-            setFormOpen(false);
-            setEditing(null);
-            load();
+            setPermissionsModalOpen(false);
+            setUserForPermissions(null);
+          }}
+          onSuccess={() => {
+            setPermissionsModalOpen(false);
+            setUserForPermissions(null);
+            toast.success('Permissions Saved', `Updated module access for ${userForPermissions.name}.`);
+            loadUsers();
           }}
         />
+      )}
+
+      {/* User Create / Edit Form Modal */}
+      {formOpen && (
+        <UserFormModal
+          initialData={editingUser}
+          onClose={() => {
+            setFormOpen(false);
+            setEditingUser(null);
+          }}
+          onSuccess={() => {
+            setFormOpen(false);
+            setEditingUser(null);
+            loadUsers();
+          }}
+        />
+      )}
+
+      {/* Delete Confirm Modal */}
+      {deleteConfirmOpen && userToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600">
+              <Trash2 className="h-6 w-6" />
+            </div>
+            <h3 className="mt-4 text-lg font-bold text-slate-900">Remove Staff Account?</h3>
+            <p className="mt-2 text-sm text-slate-600">
+              Are you sure you want to delete <strong className="text-slate-900">{userToDelete.name}</strong>? They will no longer be able to log in or access the ERP system.
+            </p>
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={deleting}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                disabled={deleting}
+                className="rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow transition hover:bg-rose-500 disabled:opacity-50"
+              >
+                {deleting ? 'Deleting...' : 'Delete Account'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </ModuleLayout>
   );
 }
 
-
-/* -------------------------------------------------------------------------- */
-/* User Row                                                                    */
-/* -------------------------------------------------------------------------- */
-
-function UserRow({ user, onEdit, onDelete }) {
-  const initials = getInitials(user.name);
-
-  return (
-    <tr className="group border-b border-slate-100 last:border-0 transition hover:bg-slate-50/60">
-
-      {/* User */}
-      <td className="px-6 py-4">
-        <div className="flex items-center gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-sm font-bold text-emerald-700">
-            {initials}
-          </div>
-
-          <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-900">
-              {user.name}
-            </p>
-
-            <p className="mt-0.5 text-xs text-slate-400">
-              User ID: {user._id?.slice(-8)}
-            </p>
-          </div>
-        </div>
-      </td>
-
-      {/* Email */}
-      <td className="px-4 py-4">
-        <span className="text-sm text-slate-600">
-          {user.email}
-        </span>
-      </td>
-
-      {/* Role */}
-      <td className="px-4 py-4">
-        <RoleBadge role={user.role} />
-      </td>
-
-      {/* Actions */}
-      <td className="px-6 py-4">
-        <div className="flex justify-end gap-2">
-
-          <button
-            onClick={onEdit}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-600 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700"
-          >
-            Edit
-          </button>
-
-          <button
-            onClick={onDelete}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-rose-500 transition hover:border-rose-200 hover:bg-rose-50"
-          >
-            Delete
-          </button>
-
-        </div>
-      </td>
-    </tr>
-  );
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Role Badge                                                                  */
-/* -------------------------------------------------------------------------- */
-
-function RoleBadge({ role }) {
-  const roles = {
-    owner: {
-      label: 'Owner',
-      className: 'bg-purple-50 text-purple-700 ring-purple-600/10',
-    },
-
-    admin: {
-      label: 'Admin',
-      className: 'bg-blue-50 text-blue-700 ring-blue-600/10',
-    },
-
-    manager: {
-      label: 'Manager',
-      className: 'bg-amber-50 text-amber-700 ring-amber-600/10',
-    },
-
-    cashier: {
-      label: 'Cashier',
-      className: 'bg-emerald-50 text-emerald-700 ring-emerald-600/10',
-    },
-
-    warehouse_staff: {
-      label: 'Warehouse Staff',
-      className: 'bg-slate-100 text-slate-700 ring-slate-600/10',
-    },
-
-    accountant: {
-      label: 'Accountant',
-      className: 'bg-cyan-50 text-cyan-700 ring-cyan-600/10',
-    },
-  };
-
-  const current = roles[role] || {
-    label: role || 'Unknown',
-    className: 'bg-slate-100 text-slate-600 ring-slate-600/10',
+function StatCard({ label, value, subtitle, icon: Icon, accent }) {
+  const accentStyles = {
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    sky: 'bg-sky-50 text-sky-700 border-sky-100',
+    purple: 'bg-purple-50 text-purple-700 border-purple-100',
   };
 
   return (
-    <span
-      className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ring-inset ${current.className}`}
-    >
-      {current.label}
-    </span>
-  );
-}
-
-
-/* -------------------------------------------------------------------------- */
-/* Stats Card                                                                  */
-/* -------------------------------------------------------------------------- */
-
-function StatCard({ label, value, icon }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex items-center justify-between">
-
-        <div>
-          <p className="text-xs font-medium text-slate-500">
-            {label}
-          </p>
-
-          <p className="mt-2 text-2xl font-bold tracking-tight text-slate-900">
-            {value}
-          </p>
-        </div>
-
-        <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-lg text-emerald-600">
-          {icon === 'users' && '♟'}
-          {icon === 'shield' && '◆'}
-          {icon === 'admin' && '●'}
-        </div>
+        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+        <span className={`flex h-8 w-8 items-center justify-center rounded-xl border ${accentStyles[accent]}`}>
+          <Icon className="h-4 w-4" />
+        </span>
+      </div>
+      <div className="mt-3">
+        <p className="text-2xl font-extrabold text-slate-900">{value}</p>
+        {subtitle && <p className="mt-1 text-xs text-slate-500">{subtitle}</p>}
       </div>
     </div>
   );
 }
 
+function RoleBadge({ role }) {
+  const badges = {
+    owner: 'bg-purple-50 text-purple-700 border-purple-200',
+    admin: 'bg-blue-50 text-blue-700 border-blue-200',
+    manager: 'bg-amber-50 text-amber-700 border-amber-200',
+    cashier: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    warehouse_staff: 'bg-slate-100 text-slate-700 border-slate-200',
+    accountant: 'bg-cyan-50 text-cyan-700 border-cyan-200',
+  };
 
-/* -------------------------------------------------------------------------- */
-/* Loading Rows                                                                */
-/* -------------------------------------------------------------------------- */
+  const labels = {
+    owner: 'Owner',
+    admin: 'Admin',
+    manager: 'Store Manager',
+    cashier: 'Cashier',
+    warehouse_staff: 'Warehouse Staff',
+    accountant: 'Accountant',
+  };
 
-function LoadingRows() {
   return (
-    <>
-      {[1, 2, 3, 4].map((item) => (
-        <tr key={item} className="border-b border-slate-100">
-          <td className="px-6 py-4">
-            <div className="flex items-center gap-3">
-              <div className="h-10 w-10 animate-pulse rounded-full bg-slate-100" />
-
-              <div className="space-y-2">
-                <div className="h-3 w-28 animate-pulse rounded bg-slate-100" />
-                <div className="h-2 w-20 animate-pulse rounded bg-slate-100" />
-              </div>
-            </div>
-          </td>
-
-          <td className="px-4 py-4">
-            <div className="h-3 w-36 animate-pulse rounded bg-slate-100" />
-          </td>
-
-          <td className="px-4 py-4">
-            <div className="h-6 w-20 animate-pulse rounded-full bg-slate-100" />
-          </td>
-
-          <td className="px-6 py-4">
-            <div className="ml-auto h-7 w-24 animate-pulse rounded bg-slate-100" />
-          </td>
-        </tr>
-      ))}
-    </>
+    <span className={`inline-flex rounded-full border px-2.5 py-0.5 text-xs font-semibold ${badges[role] || 'bg-slate-100 text-slate-700'}`}>
+      {labels[role] || role}
+    </span>
   );
 }
 
+function PermissionsModal({ user, onClose, onSuccess }) {
+  const [selectedPermissions, setSelectedPermissions] = useState(() => {
+    if (user.permissions && user.permissions.length > 0) {
+      return [...user.permissions];
+    }
+    return ROLE_DEFAULT_PRESETS[user.role] || [];
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState(null);
 
-/* -------------------------------------------------------------------------- */
-/* Empty State                                                                 */
-/* -------------------------------------------------------------------------- */
+  function togglePermission(key) {
+    setSelectedPermissions((prev) =>
+      prev.includes(key) ? prev.filter((p) => p !== key) : [...prev, key]
+    );
+  }
 
-function EmptyState({ search, onCreate }) {
+  function handleResetToRoleDefaults() {
+    const defaults = ROLE_DEFAULT_PRESETS[user.role] || [];
+    setSelectedPermissions(defaults);
+  }
+
+  function handleSelectAll() {
+    setSelectedPermissions(ALL_SYSTEM_MODULES.map((m) => m.key));
+  }
+
+  function handleClearAll() {
+    setSelectedPermissions([]);
+  }
+
+  async function handleSave(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError(null);
+
+    try {
+      await apiFetch(`/users/${user.id || user._id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          permissions: selectedPermissions,
+        }),
+      });
+      onSuccess();
+    } catch (err) {
+      setError(err.message || 'Failed to update permissions.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Group modules by category
+  const categories = ['Analytics', 'Operations', 'Sales', 'Marketing', 'Admin'];
+
   return (
-    <tr>
-      <td colSpan="4">
-        <div className="flex flex-col items-center justify-center px-6 py-16 text-center">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-3xl overflow-y-auto rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        {/* Header */}
+        <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700">
+                <KeyRound className="h-4 w-4" />
+              </span>
+              <h3 className="text-lg font-bold text-slate-900">Custom Sidebar Permissions</h3>
+            </div>
+            <p className="mt-1 text-xs text-slate-500">
+              Customize accessible sidebar modules for <strong className="text-slate-800">{user.name}</strong> ({user.email} — {user.role})
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500 hover:bg-slate-200"
+          >
+            ✕
+          </button>
+        </div>
 
-          <div className="mb-4 flex h-14 w-14 items-center justify-center rounded-2xl bg-slate-100 text-2xl text-slate-400">
-            ♟
+        <form onSubmit={handleSave} className="mt-4 space-y-6">
+          {error && (
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
+              {error}
+            </div>
+          )}
+
+          {/* Preset Shortcuts */}
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-slate-50 p-3.5">
+            <div className="flex items-center gap-2 text-xs font-medium text-slate-600">
+              <Sparkles className="h-4 w-4 text-emerald-600" />
+              <span>
+                <strong>{selectedPermissions.length}</strong> of {ALL_SYSTEM_MODULES.length} modules granted
+              </span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={handleResetToRoleDefaults}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+              >
+                Reset to {user.role} Defaults
+              </button>
+              <button
+                type="button"
+                onClick={handleSelectAll}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-emerald-700 shadow-sm hover:bg-emerald-50"
+              >
+                Grant All
+              </button>
+              <button
+                type="button"
+                onClick={handleClearAll}
+                className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-600 shadow-sm hover:bg-rose-50"
+              >
+                Clear All
+              </button>
+            </div>
           </div>
 
-          <h3 className="text-sm font-semibold text-slate-900">
-            {search ? 'No users found' : 'No users yet'}
-          </h3>
+          {/* Module Matrix Categories */}
+          <div className="space-y-4">
+            {categories.map((cat) => {
+              const catModules = ALL_SYSTEM_MODULES.filter((m) => m.category === cat);
 
-          <p className="mt-1 max-w-sm text-sm text-slate-500">
-            {search
-              ? 'Try searching with a different name, email or role.'
-              : 'Create your first system user to get started.'}
-          </p>
+              return (
+                <div key={cat} className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">{cat} Modules</h4>
+                  <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
+                    {catModules.map((mod) => {
+                      const Icon = mod.icon;
+                      const isChecked = selectedPermissions.includes(mod.key);
 
-          {!search && (
+                      return (
+                        <div
+                          key={mod.key}
+                          onClick={() => togglePermission(mod.key)}
+                          className={`flex cursor-pointer items-start gap-3 rounded-2xl border p-3.5 transition select-none ${
+                            isChecked
+                              ? 'border-emerald-500 bg-emerald-50/50 shadow-sm ring-1 ring-emerald-500/20'
+                              : 'border-slate-200 bg-white hover:border-slate-300'
+                          }`}
+                        >
+                          <div className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-lg border transition ${
+                            isChecked ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300 bg-white'
+                          }`}>
+                            {isChecked && <Check className="h-3.5 w-3.5 stroke-[3]" />}
+                          </div>
+
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <Icon className={`h-4 w-4 ${isChecked ? 'text-emerald-700' : 'text-slate-400'}`} />
+                              <p className={`text-xs font-bold ${isChecked ? 'text-emerald-950' : 'text-slate-800'}`}>
+                                {mod.label}
+                              </p>
+                            </div>
+                            <p className="mt-0.5 text-[11px] text-slate-500 leading-tight">
+                              {mod.desc}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer Actions */}
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
             <button
-              onClick={onCreate}
-              className="mt-5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700"
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
             >
-              Create user
+              Cancel
             </button>
-          )}
-        </div>
-      </td>
-    </tr>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {saving ? 'Saving Permissions...' : 'Save Permissions'}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 
-
-/* -------------------------------------------------------------------------- */
-/* User Form                                                                   */
-/* -------------------------------------------------------------------------- */
-
-function UserForm({ initial = {}, onClose = () => {} }) {
-  const isEditing = Boolean(initial?._id);
+function UserFormModal({ initialData, onClose, onSuccess }) {
+  const isEditing = Boolean(initialData?.id || initialData?._id);
+  const userId = initialData?.id || initialData?._id;
 
   const [form, setForm] = useState({
-    name: initial.name || '',
-    email: initial.email || '',
+    name: initialData?.name || '',
+    email: initialData?.email || '',
     password: '',
-    role: initial.role || 'cashier',
+    role: initialData?.role || 'cashier',
   });
-
-  const [showPassword, setShowPassword] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState('');
-
-  function updateField(field, value) {
-    setForm((current) => ({
-      ...current,
-      [field]: value,
-    }));
-  }
+  const [error, setError] = useState(null);
 
   async function handleSubmit(e) {
     e.preventDefault();
-
-    setError('');
-
-    if (!form.name.trim()) {
-      setError('Please enter the user name.');
-      return;
-    }
-
-    if (!form.email.trim()) {
-      setError('Please enter the email address.');
-      return;
-    }
-
-    if (!isEditing && form.password.length < 6) {
-      setError('Password must be at least 6 characters.');
-      return;
-    }
+    if (!form.name.trim()) return setError('Name is required.');
+    if (!form.email.trim()) return setError('Email is required.');
+    if (!isEditing && form.password.length < 6) return setError('Password must be at least 6 characters.');
 
     setSaving(true);
+    setError(null);
 
     try {
       if (isEditing) {
-        await apiFetch(`/users/${initial._id}`, {
+        await apiFetch(`/users/${userId}`, {
           method: 'PUT',
           body: JSON.stringify({
             name: form.name.trim(),
@@ -488,214 +698,115 @@ function UserForm({ initial = {}, onClose = () => {} }) {
             email: form.email.trim(),
             password: form.password,
             role: form.role,
+            permissions: ROLE_DEFAULT_PRESETS[form.role] || [],
           }),
         });
       }
-
-      onClose();
+      onSuccess();
     } catch (err) {
-      setError(err?.message || 'Failed to save user.');
+      setError(err.message || 'Failed to save staff member.');
     } finally {
       setSaving(false);
     }
   }
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 px-4 py-6 backdrop-blur-sm"
-      onMouseDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <form
-        onSubmit={handleSubmit}
-        className="w-full max-w-lg overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
-      >
-
-        {/* Modal Header */}
-        <div className="flex items-start justify-between border-b border-slate-100 px-6 py-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div>
             <h3 className="text-lg font-bold text-slate-900">
-              {isEditing ? 'Edit user' : 'Create user'}
+              {isEditing ? 'Edit Staff Account' : 'Register New Staff Member'}
             </h3>
-
-            <p className="mt-1 text-sm text-slate-500">
-              {isEditing
-                ? 'Update the user account and permissions.'
-                : 'Add a new user to your ERP system.'}
-            </p>
+            <p className="text-xs text-slate-500">Provide staff name, login credentials and system role</p>
           </div>
-
           <button
-            type="button"
             onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-lg text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-100 text-sm font-semibold text-slate-500 hover:bg-slate-200"
           >
-            ×
+            ✕
           </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="space-y-5 px-6 py-6">
-
-          {/* Error */}
+        <form onSubmit={handleSubmit} className="mt-4 space-y-4">
           {error && (
-            <div className="rounded-lg border border-rose-100 bg-rose-50 px-3.5 py-3 text-sm text-rose-600">
+            <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-xs font-semibold text-rose-700">
               {error}
             </div>
           )}
 
-          {/* Name */}
           <div>
-            <label
-              htmlFor="user-name"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              Full name
-            </label>
-
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Full Name</label>
             <input
-              id="user-name"
               type="text"
-              placeholder="John Doe"
+              required
+              placeholder="e.g. Marcus Vance"
               value={form.name}
-              onChange={(e) => updateField('name', e.target.value)}
-              disabled={saving}
-              className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:bg-slate-50"
+              onChange={(e) => setForm({ ...form, name: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none"
             />
           </div>
 
-          {/* Email */}
           <div>
-            <label
-              htmlFor="user-email"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              Email address
-            </label>
-
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Email Address</label>
             <input
-              id="user-email"
               type="email"
-              placeholder="john@example.com"
+              required
+              placeholder="marcus@supermarket.com"
               value={form.email}
-              onChange={(e) => updateField('email', e.target.value)}
-              disabled={saving}
-              className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:bg-slate-50"
+              onChange={(e) => setForm({ ...form, email: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none"
             />
           </div>
 
-          {/* Password */}
           {!isEditing && (
             <div>
-              <label
-                htmlFor="user-password"
-                className="mb-2 block text-sm font-medium text-slate-700"
-              >
-                Password
-              </label>
-
-              <div className="relative">
-                <input
-                  id="user-password"
-                  type={showPassword ? 'text' : 'password'}
-                  placeholder="Minimum 6 characters"
-                  value={form.password}
-                  onChange={(e) =>
-                    updateField('password', e.target.value)
-                  }
-                  disabled={saving}
-                  className="w-full rounded-lg border border-slate-200 px-3.5 py-2.5 pr-16 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:bg-slate-50"
-                />
-
-                <button
-                  type="button"
-                  onClick={() =>
-                    setShowPassword((value) => !value)
-                  }
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-slate-500 hover:text-emerald-600"
-                >
-                  {showPassword ? 'Hide' : 'Show'}
-                </button>
-              </div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Temporary Password</label>
+              <input
+                type="password"
+                required
+                placeholder="At least 6 characters"
+                value={form.password}
+                onChange={(e) => setForm({ ...form, password: e.target.value })}
+                className="mt-1 w-full rounded-xl border border-slate-200 p-2.5 text-sm text-slate-800 focus:border-emerald-500 focus:outline-none"
+              />
             </div>
           )}
 
-          {/* Role */}
           <div>
-            <label
-              htmlFor="user-role"
-              className="mb-2 block text-sm font-medium text-slate-700"
-            >
-              System role
-            </label>
-
+            <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">System Role</label>
             <select
-              id="user-role"
               value={form.role}
-              onChange={(e) => updateField('role', e.target.value)}
-              disabled={saving}
-              className="w-full appearance-none rounded-lg border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10 disabled:bg-slate-50"
+              onChange={(e) => setForm({ ...form, role: e.target.value })}
+              className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-2.5 text-sm font-medium text-slate-800 focus:border-emerald-500 focus:outline-none"
             >
-              <option value="owner">Owner</option>
-              <option value="admin">Admin</option>
-              <option value="manager">Manager</option>
-              <option value="cashier">Cashier</option>
-              <option value="warehouse_staff">
-                Warehouse Staff
-              </option>
-              <option value="accountant">Accountant</option>
+              <option value="owner">Owner (Full Enterprise Control)</option>
+              <option value="admin">System Admin</option>
+              <option value="manager">Store Manager</option>
+              <option value="cashier">POS Cashier</option>
+              <option value="warehouse_staff">Warehouse Staff</option>
+              <option value="accountant">Accountant / Auditor</option>
             </select>
           </div>
 
-        </div>
-
-        {/* Modal Footer */}
-        <div className="flex justify-end gap-3 border-t border-slate-100 bg-slate-50/50 px-6 py-4">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={saving}
-            className="rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
-          >
-            Cancel
-          </button>
-
-          <button
-            type="submit"
-            disabled={saving}
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-emerald-600/20 transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
-          >
-            {saving && (
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-            )}
-
-            {saving
-              ? 'Saving...'
-              : isEditing
-                ? 'Save changes'
-                : 'Create user'}
-          </button>
-        </div>
-      </form>
+          <div className="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={saving}
+              className="rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition hover:bg-emerald-500 disabled:opacity-50"
+            >
+              {saving ? 'Saving...' : isEditing ? 'Save Changes' : 'Create Staff Member'}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }
-
-
-/* -------------------------------------------------------------------------- */
-/* Helpers                                                                      */
-/* -------------------------------------------------------------------------- */
-
-function getInitials(name = '') {
-  const words = name.trim().split(/\s+/);
-
-  if (!words.length || !words[0]) return 'U';
-
-  if (words.length === 1) {
-    return words[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${words[0][0]}${words[words.length - 1][0]}`.toUpperCase();
-}
-
