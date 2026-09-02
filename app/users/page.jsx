@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
 import { useToast } from '../components/ToastProvider';
+import { useAuth } from '../components/AuthProvider';
 import {
   Users,
   Shield,
@@ -51,20 +52,23 @@ const ALL_SYSTEM_MODULES = [
 ];
 
 const ROLE_DEFAULT_PRESETS = {
-  owner: ['dashboard', 'financialReports', 'reports', 'products', 'inventory', 'stockTransfers', 'suppliers', 'pos', 'sales', 'customers', 'payments', 'cms', 'expenses', 'users'],
-  admin: ['dashboard', 'reports', 'products', 'inventory', 'suppliers', 'pos', 'sales', 'customers', 'cms', 'users'],
-  manager: ['dashboard', 'reports', 'inventory', 'suppliers', 'pos', 'sales', 'customers', 'cms'],
+  owner: ['dashboard', 'financialReports', 'reports', 'products', 'inventory', 'warehouses', 'stockTransfers', 'suppliers', 'pos', 'sales', 'customers', 'payments', 'cms', 'expenses', 'users'],
+  admin: ['dashboard', 'reports', 'products', 'inventory', 'warehouses', 'suppliers', 'pos', 'sales', 'customers', 'cms', 'users'],
+  manager: ['dashboard', 'reports', 'inventory', 'warehouses', 'suppliers', 'pos', 'sales', 'customers', 'cms'],
   cashier: ['pos', 'sales', 'customers'],
-  warehouse_staff: ['inventory', 'stockTransfers', 'suppliers'],
+  warehouse_staff: ['inventory', 'warehouses', 'stockTransfers', 'suppliers'],
   accountant: ['dashboard', 'financialReports', 'payments', 'expenses', 'suppliers'],
 };
 
 export default function UsersPage() {
   const toast = useToast();
+  const { user: currentUser } = useAuth();
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
 
   // Modals
   const [formOpen, setFormOpen] = useState(false);
@@ -78,8 +82,9 @@ export default function UsersPage() {
   async function loadUsers() {
     setLoading(true);
     try {
-      const data = await apiFetch('/users');
-      setUsers(Array.isArray(data) ? data : []);
+      const data = await apiFetch(`/users?page=${page}&limit=10`);
+      setUsers(Array.isArray(data) ? data : (data?.items || []));
+      setTotalPages(Math.max(1, Number(data?.totalPages || 1)));
     } catch (err) {
       console.error(err);
       toast.error('Error', err.message || 'Failed to load users.');
@@ -89,8 +94,10 @@ export default function UsersPage() {
   }
 
   useEffect(() => {
+    // Loading the protected directory is an intentional state synchronization.
+    // eslint-disable-next-line react-hooks/set-state-in-effect, react-hooks/exhaustive-deps
     loadUsers();
-  }, []);
+  }, [page]);
 
   function handleOpenNew() {
     setEditingUser(null);
@@ -127,6 +134,20 @@ export default function UsersPage() {
       toast.error('Delete Failed', err.message || 'Could not delete user.');
     } finally {
       setDeleting(false);
+    }
+
+  }
+
+  async function updateActivation(user, active) {
+    try {
+      await apiFetch(`/users/${user.id || user._id}/active`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: active }),
+      });
+      toast.success(active ? 'User Approved' : 'User Deactivated', `${user.name} is now ${active ? 'active' : 'inactive'}.`);
+      loadUsers();
+    } catch (err) {
+      toast.error('Access update failed', err.message || 'Could not update account access.');
     }
   }
 
@@ -242,6 +263,7 @@ export default function UsersPage() {
                   <th className="px-6 py-3.5">Staff Member</th>
                   <th className="px-5 py-3.5">Email Address</th>
                   <th className="px-5 py-3.5">Base Role</th>
+                  <th className="px-5 py-3.5">Account Status</th>
                   <th className="px-5 py-3.5">Sidebar Permissions</th>
                   <th className="px-6 py-3.5 text-right">Actions</th>
                 </tr>
@@ -249,7 +271,7 @@ export default function UsersPage() {
               <tbody className="divide-y divide-slate-100">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                    <td colSpan={6} className="p-8 text-center text-slate-500">
                       <div className="flex items-center justify-center gap-2">
                         <span className="animate-spin text-lg">↻</span>
                         <span>Loading staff directory...</span>
@@ -258,7 +280,7 @@ export default function UsersPage() {
                   </tr>
                 ) : filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-8 text-center text-slate-500">
+                    <td colSpan={6} className="p-8 text-center text-slate-500">
                       No staff users found matching your search.
                     </td>
                   </tr>
@@ -293,6 +315,12 @@ export default function UsersPage() {
                           <RoleBadge role={u.role} />
                         </td>
 
+                        <td className="px-5 py-4">
+                         <span className={`rounded-full border px-2.5 py-1 text-xs font-bold ${u.isActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-amber-200 bg-amber-50 text-amber-700'}`}>
+                           {u.isActive ? 'Active' : (u.approvalStatus === 'rejected' ? 'Inactive' : 'Pending owner approval')}
+                         </span>
+                        </td>
+
                         {/* Permissions Summary */}
                         <td className="px-5 py-4">
                           <div className="flex items-center gap-2">
@@ -310,6 +338,14 @@ export default function UsersPage() {
                         {/* Actions */}
                         <td className="px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
+                            {currentUser?.role === 'owner' && String(currentUser.id) !== String(u.id || u._id) && (
+                              <button
+                                onClick={() => updateActivation(u, !u.isActive)}
+                                className={`rounded-xl border px-3 py-1.5 text-xs font-bold ${u.isActive ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}
+                              >
+                                {u.isActive ? 'Deactivate' : 'Approve & activate'}
+                              </button>
+                            )}
                             <button
                               onClick={() => handleOpenPermissions(u)}
                               className="inline-flex items-center gap-1.5 rounded-xl border border-emerald-200 bg-emerald-50/70 px-3 py-1.5 text-xs font-bold text-emerald-700 shadow-sm transition hover:bg-emerald-100 active:scale-95"
@@ -344,8 +380,13 @@ export default function UsersPage() {
             </table>
           </div>
 
-          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-3 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-6 py-3 text-xs text-slate-500">
             <span>Showing {filteredUsers.length} staff members</span>
+            <div className="flex items-center gap-2">
+              <button type="button" disabled={page <= 1} onClick={() => setPage((value) => value - 1)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40">Previous</button>
+              <span>Page {page} of {totalPages}</span>
+              <button type="button" disabled={page >= totalPages} onClick={() => setPage((value) => value + 1)} className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 font-semibold disabled:opacity-40">Next</button>
+            </div>
             <span>Role-based access control active</span>
           </div>
         </div>

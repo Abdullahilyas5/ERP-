@@ -1,4 +1,4 @@
-﻿const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4000/api';
+﻿const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:9000/api';
 
 export function getStoredToken() {
   if (typeof window === 'undefined') return null;
@@ -27,14 +27,25 @@ export async function apiFetch(path, options = {}) {
   const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
   if (token) headers.Authorization = 'Bearer ' + token;
 
-  const res = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers,
-    credentials: 'include',
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE_URL}${path}`, {
+      ...options,
+      headers,
+      credentials: 'include',
+    });
+  } catch (error) {
+    const unavailable = new Error(`ERP API is unavailable at ${API_BASE_URL}. Start the server on port 9000 and try again.`);
+    unavailable.cause = error;
+    throw unavailable;
+  }
 
   const payload = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(payload.message || 'Request failed');
+  if (!res.ok) {
+    const error = new Error(payload.message || `Request failed (${res.status})`);
+    error.status = res.status;
+    throw error;
+  }
   return payload;
 }
 

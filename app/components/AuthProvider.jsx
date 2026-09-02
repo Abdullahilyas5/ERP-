@@ -3,14 +3,6 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { apiFetch, getStoredToken, getStoredUser, setStoredAuth } from '../lib/api.client';
 
-const DEFAULT_CUSTOMER = {
-  id: 'guest-customer',
-  name: 'Guest Customer',
-  role: 'customer',
-  email: 'customer@stores.local',
-  permissions: ['home', 'catalog', 'checkout'],
-};
-
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
@@ -24,15 +16,6 @@ export function AuthProvider({ children }) {
       const savedUser = getStoredUser();
 
       if (!savedToken) {
-        const defaultCustomerToken = 'customer-demo-token';
-        if (!savedUser || savedUser.role !== 'customer') {
-          setStoredAuth(defaultCustomerToken, DEFAULT_CUSTOMER);
-          setToken(defaultCustomerToken);
-          setUser(DEFAULT_CUSTOMER);
-        } else {
-          setToken(defaultCustomerToken);
-          setUser(savedUser);
-        }
         setReady(true);
         return;
       }
@@ -76,6 +59,10 @@ export function AuthProvider({ children }) {
     () => ({
       token,
       user,
+      setUser: (nextUser) => {
+        setStoredAuth(token, nextUser);
+        setUser(nextUser);
+      },
       ready,
       isAuthenticated: Boolean(token && user),
       login,

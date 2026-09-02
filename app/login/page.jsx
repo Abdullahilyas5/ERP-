@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '../components/AuthProvider';
@@ -15,10 +15,11 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  if (isAuthenticated) {
-    router.replace('/overview');
-    return null;
-  }
+  useEffect(() => {
+    if (isAuthenticated) router.replace('/overview');
+  }, [isAuthenticated, router]);
+
+  if (isAuthenticated) return null;
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -168,7 +169,7 @@ export default function LoginPage() {
           {/* Signup */}
           <div className="mt-6 border-t border-slate-100 pt-6 text-center">
             <p className="text-sm text-slate-500">
-              Don't have an account?{' '}
+              Don&apos;t have an account?{' '}
               <Link
                 href="/signup"
                 className="font-semibold text-emerald-600 transition hover:text-emerald-700"
@@ -187,4 +188,3 @@ export default function LoginPage() {
     </main>
   );
 }
-

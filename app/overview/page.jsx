@@ -27,6 +27,7 @@ import {
   Store,
   Calendar,
   CheckCircle2,
+  Loader2,
 } from 'lucide-react';
 
 const SYSTEM_MODULES = [
@@ -93,7 +94,9 @@ export default function OverviewPage() {
                   <Sparkles className="h-3.5 w-3.5" />
                   Premium Retail Hub
                 </span>
-                <span className="text-xs text-slate-400 font-mono">Terminal #01 • Online</span>
+                <span className="text-xs text-slate-400 font-mono">
+                  {dashboard?.metricDate ? `Metrics for ${dashboard.metricDate}` : 'Loading metrics...'}
+                </span>
               </div>
               <h2 className="text-2xl font-black tracking-tight text-white md:text-4xl">
                 Welcome back, {user?.name || 'Store Director'}
@@ -123,36 +126,38 @@ export default function OverviewPage() {
         </div>
 
         {/* Executive KPI Metrics */}
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-4">
           <StatCard
             label="Gross Sales Revenue"
-            value={dashboard?.grossSales || '$14,890.00'}
-            subtitle="Today's total register intake"
+            value={dashboard ? dashboard.grossSales : '—'}
+            subtitle="Today's paid register intake"
             accent="emerald"
             icon={TrendingUp}
-            growth="+12.4%"
+            growth={formatComparison(dashboard?.comparisons?.grossSales, 'vs yesterday', loading)}
           />
           <StatCard
             label="Inventory Valuation"
-            value={dashboard?.inventoryValue || '$84,250.00'}
+            value={dashboard ? dashboard.inventoryValue : '—'}
             subtitle="Across all warehouse SKUs"
             accent="sky"
             icon={Package}
+            growth={formatComparison(dashboard?.comparisons?.inventoryValue, 'vs yesterday', loading)}
           />
           <StatCard
             label="Active Customers"
-            value={dashboard?.activeCustomers || '1,420'}
-            subtitle="Loyalty accounts enrolled"
+            value={dashboard?.activeCustomers ?? '—'}
+            subtitle={dashboard ? `${dashboard.newCustomersToday ?? 0} new customers today` : 'Loading metrics...'}
             accent="purple"
             icon={Users2}
-            growth="+8 new"
+            growth={formatComparison(dashboard?.comparisons?.activeCustomers, 'vs yesterday', loading)}
           />
           <StatCard
             label="Completed Orders"
-            value={dashboard?.transactions || '384'}
+            value={dashboard?.transactions ?? '—'}
             subtitle="Cash & card checkout tickets"
             accent="amber"
             icon={Receipt}
+            growth={formatComparison(dashboard?.comparisons?.transactions, 'vs yesterday', loading)}
           />
         </div>
 
@@ -248,25 +253,20 @@ export default function OverviewPage() {
                 ))
               )}
 
-              {/* Department Produce Card */}
-              <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-slate-900 p-5 text-white shadow">
-                <img
-                  src="/images/fresh_produce.jpg"
-                  alt="Fresh Produce"
-                  className="absolute inset-0 h-full w-full object-cover opacity-30"
-                />
-                <div className="relative z-10 space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-400">Department Status</span>
-                  <p className="text-sm font-bold">Organic Grocery & Fresh Produce</p>
-                  <p className="text-xs text-slate-300">Daily shipment received • 98% stock health</p>
-                </div>
-              </div>
             </div>
           </div>
         </div>
       </div>
     </ModuleLayout>
   );
+}
+
+function formatComparison(metric, label, loading) {
+  if (loading) return <Loader2 className="h-3.5 w-3.5 animate-spin" aria-label="Loading comparison" />;
+  if (!metric) return 'No comparison data';
+  if (!metric.hasPreviousData || metric.changePercent == null) return 'No previous data';
+  const prefix = metric.changePercent > 0 ? '+' : '';
+  return `${prefix}${metric.changePercent}% ${label}`;
 }
 
 function StatCard({ label, value, subtitle, accent, icon: Icon, growth }) {
@@ -278,15 +278,15 @@ function StatCard({ label, value, subtitle, accent, icon: Icon, growth }) {
   };
 
   return (
-    <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-      <div className="flex items-center justify-between">
-        <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
+    <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <p className="min-w-0 break-words text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
         <span className={`flex h-8 w-8 items-center justify-center rounded-xl border ${styles[accent]}`}>
           <Icon className="h-4 w-4" />
         </span>
       </div>
-      <div className="mt-4 flex items-baseline justify-between">
-        <p className="text-2xl font-black tracking-tight text-slate-900">{value}</p>
+      <div className="mt-4 flex min-w-0 flex-wrap items-baseline justify-between gap-2">
+        <p className="min-w-0 break-words text-2xl font-black tracking-tight text-slate-900">{value}</p>
         {growth && (
           <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-800">
             {growth}

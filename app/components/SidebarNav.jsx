@@ -21,6 +21,7 @@ import {
   LogOut,
   ChevronRight,
   Store,
+  Settings,
 } from 'lucide-react';
 
 const navigationGroups = [
@@ -37,6 +38,7 @@ const navigationGroups = [
     items: [
       { href: '/products', label: 'Products', permission: 'products', icon: Package },
       { href: '/inventory', label: 'Inventory', permission: 'inventory', icon: Boxes },
+      { href: '/warehouses', label: 'Warehouses', permission: 'warehouses', icon: Building2 },
       { href: '/stock-transfers', label: 'Stock Transfers', permission: 'stockTransfers', icon: ArrowLeftRight },
       { href: '/suppliers', label: 'Suppliers', permission: 'suppliers', icon: Building2 },
     ],
@@ -61,6 +63,7 @@ const navigationGroups = [
     items: [
       { href: '/expenses', label: 'Expenses', permission: 'expenses', icon: Wallet },
       { href: '/users', label: 'Users & Permissions', permission: 'users', icon: ShieldCheck },
+      { href: '/settings', label: 'My settings', icon: Settings },
     ],
   },
 ];
@@ -104,7 +107,6 @@ export function SidebarNav() {
         {navigationGroups.map((group) => {
           // Filter items based on permissions
           const visibleItems = group.items.filter((item) => {
-            if (item.permission === 'dashboard') return true;
             return permissions.includes(item.permission);
           });
 

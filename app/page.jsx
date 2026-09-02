@@ -4,6 +4,8 @@
 import Link from 'next/link';
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { apiFetch } from './lib/api.client';
 
 const features = [
   {
@@ -73,6 +75,7 @@ const workflow = [
 
 export default function LandingPage() {
   const router = useRouter();
+  const [articles, setArticles] = useState([]);
 
   useEffect(() => {
     // Check if an authentication token exists
@@ -82,6 +85,12 @@ export default function LandingPage() {
       router.replace('/overview');
     }
   }, [router]);
+
+  useEffect(() => {
+    apiFetch('/public/posts?limit=6')
+      .then((response) => setArticles(Array.isArray(response) ? response : (response?.posts || [])))
+      .catch((error) => console.error('Failed to load published articles:', error));
+  }, []);
 
   return (
     <main className="min-h-screen overflow-hidden bg-slate-50 text-slate-900">
@@ -266,6 +275,36 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section id="articles" className="bg-slate-50">
+        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
+          <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+            <div>
+              <p className="text-sm font-semibold text-emerald-600">FROM OUR STORE</p>
+              <h2 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Latest articles & announcements</h2>
+              <p className="mt-3 max-w-xl text-slate-500">Discover the latest updates, promotions, and news published by our team.</p>
+            </div>
+            <Link href="#articles" className="text-sm font-semibold text-emerald-700 hover:text-emerald-800">View all articles →</Link>
+          </div>
+          {articles.length === 0 ? (
+            <div className="mt-10 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">New articles will appear here when published.</div>
+          ) : (
+            <div className="mt-10 grid gap-5 md:grid-cols-3">
+              {articles.map((article) => (
+                <article key={article._id || article.id || article.slug} className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+                  {article.coverImage && <img src={article.coverImage} alt="" className="h-40 w-full object-cover" />}
+                  <div className="p-5">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-emerald-600">{article.category || 'Announcement'}</p>
+                    <h3 className="mt-2 text-lg font-bold text-slate-900">{article.title}</h3>
+                    <p className="mt-2 line-clamp-3 text-sm leading-6 text-slate-500">{article.excerpt || article.content}</p>
+                    <p className="mt-4 text-xs text-slate-400">{article.publishedAt ? new Date(article.publishedAt).toLocaleDateString() : ''}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
       {/* ------------------------------------------------------------------ */}
       {/* Features                                                           */}
       {/* ------------------------------------------------------------------ */}
@@ -398,7 +437,7 @@ export default function LandingPage() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-xs font-medium text-slate-400">
-                    TODAY'S OVERVIEW
+                    TODAY&apos;S OVERVIEW
                   </p>
 
                   <p className="mt-1 text-xl font-bold text-slate-900">

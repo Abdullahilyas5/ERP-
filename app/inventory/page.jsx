@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/set-state-in-effect, react-hooks/exhaustive-deps */
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
@@ -42,29 +43,30 @@ export default function InventoryPage() {
     try {
       const [overviewRes, productsRes, transactionsRes] = await Promise.all([
         apiFetch('/inventory').catch(() => ({})),
-        apiFetch('/products').catch(() => []),
+        apiFetch('/products').catch(() => ({ items: [] })),
         apiFetch('/inventory/transactions?limit=50').catch(() => ({ transactions: [] })),
       ]);
+      const productItems = Array.isArray(productsRes) ? productsRes : (productsRes?.items || []);
 
       if (overviewRes?.summary) {
         setSummary(overviewRes.summary);
-      } else if (Array.isArray(productsRes)) {
+      } else if (productItems.length) {
         // Fallback calculations if summary isn't provided
-        const totalUnits = productsRes.reduce((acc, p) => acc + (p.stock || 0), 0);
-        const totalVal = productsRes.reduce((acc, p) => acc + ((p.stock || 0) * (p.price || 0)), 0);
-        const low = productsRes.filter(p => (p.stock || 0) <= (p.reorderLevel || 0) && (p.stock || 0) > 0).length;
-        const oos = productsRes.filter(p => (p.stock || 0) <= 0).length;
+        const totalUnits = productItems.reduce((acc, p) => acc + (p.stock || 0), 0);
+        const totalVal = productItems.reduce((acc, p) => acc + ((p.stock || 0) * (p.price || 0)), 0);
+        const low = productItems.filter(p => (p.stock || 0) <= (p.reorderLevel || 0) && (p.stock || 0) > 0).length;
+        const oos = productItems.filter(p => (p.stock || 0) <= 0).length;
         setSummary({
-          totalProducts: productsRes.length,
+          totalProducts: productItems.length,
           totalStockUnits: totalUnits,
           totalValuation: totalVal,
           lowStockCount: low,
           outOfStockCount: oos,
-          healthyCount: Math.max(0, productsRes.length - low - oos),
+          healthyCount: Math.max(0, productItems.length - low - oos),
         });
       }
 
-      setProducts(Array.isArray(productsRes) ? productsRes : []);
+      setProducts(productItems);
       setAlerts(overviewRes?.alerts || []);
       setTransfers(overviewRes?.transfers || []);
       setTransactions(transactionsRes?.transactions || overviewRes?.recentTransactions || []);
@@ -117,6 +119,15 @@ export default function InventoryPage() {
     if (transactionTypeFilter === 'all') return transactions;
     return transactions.filter((t) => t.type === transactionTypeFilter);
   }, [transactions, transactionTypeFilter]);
+
+  const [catalogPage, setCatalogPage] = useState(1);
+  const [transactionPage, setTransactionPage] = useState(1);
+  const pageSize = 8;
+
+  const catalogPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const transactionPages = Math.max(1, Math.ceil(filteredTransactions.length / pageSize));
+  const paginatedProducts = filteredProducts.slice((catalogPage - 1) * pageSize, catalogPage * pageSize);
+  const paginatedTransactions = filteredTransactions.slice((transactionPage - 1) * pageSize, transactionPage * pageSize);
 
   function handleOpenAdjust(product = null) {
     setSelectedProductForAdjust(product || (products.length > 0 ? products[0] : null));
@@ -234,7 +245,10 @@ export default function InventoryPage() {
                   type="text"
                   placeholder="Search by product name, SKU or category..."
                   value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onChange={(e) => {
+                    setSearchQuery(e.target.value);
+                    setCatalogPage(1);
+                  }}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-800 placeholder-slate-400 transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100"
                 />
                 {searchQuery && (
@@ -252,7 +266,10 @@ export default function InventoryPage() {
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Category:</label>
                   <select
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedCategory(e.target.value);
+                      setCatalogPage(1);
+                    }}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                   >
                     {categories.map((c) => (
@@ -267,7 +284,10 @@ export default function InventoryPage() {
                   <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status:</label>
                   <select
                     value={selectedStockStatus}
-                    onChange={(e) => setSelectedStockStatus(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedStockStatus(e.target.value);
+                      setCatalogPage(1);
+                    }}
                     className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100"
                   >
                     <option value="All">All Statuses</option>
@@ -305,14 +325,14 @@ export default function InventoryPage() {
                           </div>
                         </td>
                       </tr>
-                    ) : filteredProducts.length === 0 ? (
+                    ) : paginatedProducts.length === 0 ? (
                       <tr>
                         <td colSpan={8} className="p-8 text-center text-slate-500">
                           No products found matching your filter criteria.
                         </td>
                       </tr>
                     ) : (
-                      filteredProducts.map((p) => {
+                      paginatedProducts.map((p) => {
                         const stock = Number(p.stock || 0);
                         const reorder = Number(p.reorderLevel || 0);
                         const price = Number(p.price || 0);
@@ -383,7 +403,25 @@ export default function InventoryPage() {
               </div>
               <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
                 <span>Showing {filteredProducts.length} of {products.length} total items</span>
-                <span>Values updated dynamically from catalog</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setCatalogPage((current) => Math.max(1, current - 1))}
+                    disabled={catalogPage === 1}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Previous
+                  </button>
+                  <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">{catalogPage} / {catalogPages}</span>
+                  <button
+                    type="button"
+                    onClick={() => setCatalogPage((current) => Math.min(catalogPages, current + 1))}
+                    disabled={catalogPage >= catalogPages}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    Next
+                  </button>
+                </div>
               </div>
             </div>
           </section>
@@ -491,7 +529,10 @@ export default function InventoryPage() {
                 <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Type:</label>
                 <select
                   value={transactionTypeFilter}
-                  onChange={(e) => setTransactionTypeFilter(e.target.value)}
+                  onChange={(e) => {
+                    setTransactionTypeFilter(e.target.value);
+                    setTransactionPage(1);
+                  }}
                   className="rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none"
                 >
                   <option value="all">All Types</option>
@@ -518,14 +559,14 @@ export default function InventoryPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredTransactions.length === 0 ? (
+                    {paginatedTransactions.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="p-8 text-center text-slate-500">
                           No transaction records found.
                         </td>
                       </tr>
                     ) : (
-                      filteredTransactions.map((tx) => {
+                      paginatedTransactions.map((tx) => {
                         const qty = Number(tx.qty || 0);
                         const isPositive = qty > 0;
                         const prod = tx.productId || {};
@@ -579,6 +620,30 @@ export default function InventoryPage() {
                   </tbody>
                 </table>
               </div>
+              {filteredTransactions.length > 0 && (
+                <div className="flex items-center justify-between border-t border-slate-200 bg-slate-50 px-5 py-3 text-xs text-slate-500">
+                  <span>Showing {filteredTransactions.length} total transaction records</span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setTransactionPage((current) => Math.max(1, current - 1))}
+                      disabled={transactionPage === 1}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Previous
+                    </button>
+                    <span className="rounded-lg bg-slate-100 px-2.5 py-1 font-semibold text-slate-700">{transactionPage} / {transactionPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setTransactionPage((current) => Math.min(transactionPages, current + 1))}
+                      disabled={transactionPage >= transactionPages}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Next
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </section>
         )}
@@ -703,7 +768,7 @@ function StockAdjustmentModal({ products, selectedProduct, onClose, onSuccess })
   const [mode, setMode] = useState('delta'); // 'delta' (add/subtract) or 'set' (exact)
   const [adjustType, setAdjustType] = useState('add'); // 'add' or 'subtract'
   const [quantity, setQuantity] = useState(1);
-  const [exactStock, setExactStock] = useState(0);
+  const [exactStock, setExactStock] = useState(Number(selectedProduct?.stock || products[0]?.stock || 0));
   const [reason, setReason] = useState('Cycle Count / Inventory Audit');
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -713,10 +778,11 @@ function StockAdjustmentModal({ products, selectedProduct, onClose, onSuccess })
   const currentProduct = products.find((p) => p._id === productId) || selectedProduct || {};
   const currentStock = Number(currentProduct.stock || 0);
 
-  // Sync exact stock on product change
-  useEffect(() => {
-    setExactStock(currentStock);
-  }, [productId, currentStock]);
+  function handleProductChange(nextProductId) {
+    setProductId(nextProductId);
+    const nextProduct = products.find((p) => p._id === nextProductId) || selectedProduct || {};
+    setExactStock(Number(nextProduct.stock || 0));
+  }
 
   // Projected stock preview
   let projectedStock = currentStock;
@@ -795,7 +861,7 @@ function StockAdjustmentModal({ products, selectedProduct, onClose, onSuccess })
             <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500">Select Product</label>
             <select
               value={productId}
-              onChange={(e) => setProductId(e.target.value)}
+              onChange={(e) => handleProductChange(e.target.value)}
               className="mt-1 w-full rounded-xl border border-slate-200 bg-slate-50 p-2.5 text-sm font-semibold text-slate-800 focus:border-emerald-500 focus:bg-white focus:outline-none"
             >
               {products.map((p) => (

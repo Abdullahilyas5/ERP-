@@ -30,8 +30,8 @@ export default function SignupPage() {
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters.');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters.');
       return;
     }
 
@@ -139,7 +139,7 @@ export default function SignupPage() {
                 </label>
 
                 <span className="text-xs text-slate-400">
-                  Minimum 6 characters
+                  Minimum 8 characters
                 </span>
               </div>
 
