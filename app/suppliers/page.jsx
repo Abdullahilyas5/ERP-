@@ -4,6 +4,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
 import { useToast } from '../components/ToastProvider';
+import { Building2, CheckCircle2, Mail, Phone, Search, PauseCircle } from 'lucide-react';
 
 export default function SuppliersPage() {
   const toast = useToast();
@@ -12,6 +13,8 @@ export default function SuppliersPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [supplierPage, setSupplierPage] = useState(1);
+  const supplierPageSize = 6;
 
   // Modals state
   const [formModalOpen, setFormModalOpen] = useState(false);
@@ -40,7 +43,10 @@ export default function SuppliersPage() {
   }
 
   useEffect(() => {
+    // Load the initial directory once when the module mounts.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     loadSuppliers();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filtered suppliers
@@ -61,6 +67,9 @@ export default function SuppliersPage() {
       return matchSearch && matchStatus;
     });
   }, [suppliers, searchQuery, statusFilter]);
+  const supplierTotalPages = Math.max(1, Math.ceil(filteredSuppliers.length / supplierPageSize));
+  const currentSupplierPage = Math.min(supplierPage, supplierTotalPages);
+  const visibleSuppliers = filteredSuppliers.slice((currentSupplierPage - 1) * supplierPageSize, currentSupplierPage * supplierPageSize);
 
   // Metrics
   const stats = useMemo(() => {
@@ -158,21 +167,21 @@ export default function SuppliersPage() {
           value={stats.total}
           subtitle="Active procurement accounts"
           accent="emerald"
-          icon="🏛️"
+          icon={Building2}
         />
         <SupplierStatCard
           label="Active Partners"
           value={stats.active}
           subtitle="Ready for purchase orders"
           accent="sky"
-          icon="✅"
+          icon={CheckCircle2}
         />
         <SupplierStatCard
           label="Inactive / On Hold"
           value={stats.inactive}
           subtitle="Suspended or archived"
           accent="slate"
-          icon="⏸️"
+          icon={PauseCircle}
         />
       </div>
 
@@ -182,18 +191,18 @@ export default function SuppliersPage() {
         <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
           <div className="relative flex-1">
             <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-              🔍
+              <Search className="h-4 w-4" />
             </span>
             <input
               type="text"
               placeholder="Search by company name, contact person, email, phone, city..."
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => { setSearchQuery(e.target.value); setSupplierPage(1); }}
               className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-800 placeholder-slate-400 transition focus:border-emerald-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-100"
             />
             {searchQuery && (
               <button
-                onClick={() => setSearchQuery('')}
+                onClick={() => { setSearchQuery(''); setSupplierPage(1); }}
                 className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs text-slate-400 hover:text-slate-600"
               >
                 Clear
@@ -206,7 +215,7 @@ export default function SuppliersPage() {
               <label className="text-xs font-semibold uppercase tracking-wider text-slate-500">Status:</label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => { setStatusFilter(e.target.value); setSupplierPage(1); }}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm focus:border-emerald-500 focus:outline-none"
               >
                 <option value="all">All Statuses</option>
@@ -217,8 +226,54 @@ export default function SuppliersPage() {
           </div>
         </div>
 
-        {/* Suppliers Data Table */}
-        <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+        {/* Supplier vendor cards */}
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {loading ? <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">Loading suppliers directory...</div> : filteredSuppliers.length === 0 ? (
+            <div className="rounded-3xl border border-slate-200 bg-white p-8 text-center text-sm text-slate-500 md:col-span-2 xl:col-span-3">
+              {searchQuery || statusFilter !== 'all' ? 'No suppliers matched your search criteria.' : 'No suppliers registered yet.'}
+            </div>
+          ) : visibleSuppliers.map((s) => {
+            const isActive = (s.status || 'Active') === 'Active';
+            const initials = s.name ? s.name.substring(0, 2).toUpperCase() : 'SP';
+            return (
+              <article key={s._id || s.id} className="flex flex-col rounded-3xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-emerald-100 text-sm font-bold text-emerald-800">{initials}</div>
+                    <div className="min-w-0">
+                      <h3 className="truncate font-bold text-slate-900">{s.name}</h3>
+                      <p className="truncate text-xs text-slate-500">{s.contactName || 'No contact person'}</p>
+                    </div>
+                  </div>
+                  <span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{s.status || 'Active'}</span>
+                </div>
+                <div className="mt-5 grid gap-2 text-xs text-slate-600">
+                  <p><Mail className="mr-2 inline h-3.5 w-3.5 text-slate-400" />{s.email || 'No email provided'}</p>
+                  <p><Phone className="mr-2 inline h-3.5 w-3.5 text-slate-400" />{s.phone || 'No phone provided'}</p>
+                  <p><Building2 className="mr-2 inline h-3.5 w-3.5 text-slate-400" />{[s.city, s.country].filter(Boolean).join(', ') || 'Location not specified'}</p>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-4 text-xs">
+                  <span className="rounded-lg bg-slate-100 px-2 py-1 font-medium text-slate-700">{s.paymentTerms || 'Net 30'}</span>
+                  {s.taxId && <span className="text-slate-400">Tax ID: {s.taxId}</span>}
+                </div>
+                <div className="mt-4 flex gap-2">
+                  <button onClick={() => handleOpenDetails(s)} className="flex-1 rounded-xl border border-slate-200 px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50">View details</button>
+                  <button onClick={() => handleOpenEdit(s)} className="rounded-xl border border-emerald-200 px-3 py-2 text-xs font-semibold text-emerald-700 hover:bg-emerald-50">Edit</button>
+                  <button onClick={() => handleOpenDelete(s)} className="rounded-xl border border-rose-200 px-3 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50" aria-label={`Delete ${s.name}`}>Delete</button>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-500 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <span>{filteredSuppliers.length === 0 ? 'Showing 0 suppliers' : `Showing ${(currentSupplierPage - 1) * supplierPageSize + 1}-${Math.min(currentSupplierPage * supplierPageSize, filteredSuppliers.length)} of ${filteredSuppliers.length} suppliers`}</span>
+          <div className="flex items-center gap-2">
+            <button type="button" onClick={() => setSupplierPage((current) => Math.max(1, current - 1))} disabled={currentSupplierPage === 1} className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+            <span className="min-w-16 text-center font-semibold text-slate-700">Page {currentSupplierPage} of {supplierTotalPages}</span>
+            <button type="button" onClick={() => setSupplierPage((current) => Math.min(supplierTotalPages, current + 1))} disabled={currentSupplierPage === supplierTotalPages} className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+          </div>
+        </div>
+        <div className="hidden overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
               <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -293,12 +348,12 @@ export default function SuppliersPage() {
                           <div className="space-y-0.5">
                             {s.email && (
                               <p className="text-xs text-slate-600">
-                                ✉️ <a href={`mailto:${s.email}`} className="text-emerald-700 hover:underline">{s.email}</a>
+                                <Mail className="mr-1 inline h-3.5 w-3.5 text-slate-400" /><a href={`mailto:${s.email}`} className="text-emerald-700 hover:underline">{s.email}</a>
                               </p>
                             )}
                             {s.phone && (
                               <p className="text-xs text-slate-600">
-                                📞 <a href={`tel:${s.phone}`} className="hover:underline">{s.phone}</a>
+                                <Phone className="mr-1 inline h-3.5 w-3.5 text-slate-400" /><a href={`tel:${s.phone}`} className="hover:underline">{s.phone}</a>
                               </p>
                             )}
                             {!s.email && !s.phone && (
@@ -423,6 +478,7 @@ export default function SuppliersPage() {
 }
 
 function SupplierStatCard({ label, value, subtitle, accent, icon }) {
+  const Icon = icon;
   const styles = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     sky: 'bg-sky-50 text-sky-700 border-sky-100',
@@ -434,7 +490,7 @@ function SupplierStatCard({ label, value, subtitle, accent, icon }) {
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
         <span className={`flex h-8 w-8 items-center justify-center rounded-xl border text-sm ${styles[accent]}`}>
-          {icon}
+          <Icon className="h-4 w-4" />
         </span>
       </div>
       <div className="mt-3">
@@ -720,6 +776,7 @@ function SupplierFormModal({ initialData, onClose, onSuccess }) {
 
 function SupplierDetailsModal({ supplier, onClose, onEdit }) {
   const purchaseOrders = supplier?.purchaseOrders || [];
+  const products = supplier?.products || [];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
@@ -770,6 +827,23 @@ function SupplierDetailsModal({ supplier, onClose, onEdit }) {
               <div>
                 <span className="text-xs text-slate-400">Contact Person:</span>
                 <p className="font-semibold text-slate-900">{supplier.contactName || 'Not specified'}</p>
+              </div>
+
+              <div className="rounded-2xl border border-slate-200 p-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Linked products</h4>
+                  <span className="text-xs font-semibold text-emerald-700">{products.length} products</span>
+                </div>
+                {products.length > 0 ? (
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {products.map((product) => (
+                      <div key={product._id} className="rounded-xl bg-slate-50 p-3">
+                        <p className="font-semibold text-slate-900">{product.name}</p>
+                        <p className="mt-1 text-xs text-slate-500">{product.sku} · Stock {product.stock ?? 0}</p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <p className="mt-3 text-sm text-slate-500">No products are linked to this supplier yet.</p>}
               </div>
               <div>
                 <span className="text-xs text-slate-400">Email Address:</span>

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { Fragment, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
@@ -43,11 +43,25 @@ const SYSTEM_MODULES = [
   { title: 'User & Permissions', href: '/users', permission: 'users', icon: ShieldCheck, tone: 'from-teal-600 to-emerald-700', desc: 'Staff access & sidebar controls' },
 ];
 
+function localDateInputValue(date = new Date()) {
+  const offsetDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+  return offsetDate.toISOString().slice(0, 10);
+}
+
+function defaultStartDate() {
+  const date = new Date();
+  date.setDate(date.getDate() - 30);
+  return localDateInputValue(date);
+}
+
 export default function OverviewPage() {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState(null);
   const [announcements, setAnnouncements] = useState([]);
   const [loading, setLoading] = useState(true);
+  const today = localDateInputValue();
+  const [startDate, setStartDate] = useState(defaultStartDate);
+  const [endDate, setEndDate] = useState(today);
 
   const permissions = user?.permissions || [];
 
@@ -56,14 +70,35 @@ export default function OverviewPage() {
   );
 
   useEffect(() => {
+    const cacheKey = `erp-dashboard:${user?.id || user?.email || 'current'}:${startDate}:${endDate}`;
+    try {
+      const cached = JSON.parse(localStorage.getItem(cacheKey) || 'null');
+      if (cached?.dashboard) {
+        Promise.resolve().then(() => {
+          setDashboard(cached.dashboard);
+          setAnnouncements(Array.isArray(cached.announcements) ? cached.announcements : []);
+        });
+      }
+    } catch {
+      // Ignore unavailable or malformed browser storage.
+    }
+
     async function load() {
       try {
         const [dashRes, postsRes] = await Promise.all([
-          apiFetch('/dashboard').catch(() => null),
+          apiFetch(`/dashboard?startDate=${startDate}&endDate=${endDate}&timezone=${encodeURIComponent(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC')}`).catch(() => null),
           apiFetch('/posts?limit=3').catch(() => ({ posts: [] })),
         ]);
-        setDashboard(dashRes);
-        setAnnouncements(Array.isArray(postsRes) ? postsRes : (postsRes?.posts || []));
+        const nextAnnouncements = Array.isArray(postsRes) ? postsRes : (postsRes?.posts || []);
+        if (dashRes) setDashboard(dashRes);
+        setAnnouncements((current) => (nextAnnouncements.length ? nextAnnouncements : current));
+        if (dashRes) {
+          try {
+            localStorage.setItem(cacheKey, JSON.stringify({ dashboard: dashRes, announcements: nextAnnouncements }));
+          } catch {
+            // Caching is best effort and must not affect the live dashboard.
+          }
+        }
       } catch (err) {
         console.error(err);
       } finally {
@@ -71,7 +106,21 @@ export default function OverviewPage() {
       }
     }
     load();
-  }, []);
+  }, [startDate, endDate, user?.id, user?.email]);
+
+  const trend = (Array.isArray(dashboard?.salesTrend) ? dashboard.salesTrend : []).map((item) => ({
+    ...item,
+    value: Number.isFinite(Number(item?.value)) ? Number(item.value) : 0,
+  }));
+  const maxTrend = Math.max(...trend.map((item) => item.value), 1);
+  const heatmap = (Array.isArray(dashboard?.salesHeatmap) ? dashboard.salesHeatmap : []).map((item) => ({
+    ...item,
+    day: Number(item?.day),
+    hour: Number(item?.hour),
+    value: Number.isFinite(Number(item?.value)) ? Number(item.value) : 0,
+  }));
+  const maxHeat = Math.max(...heatmap.map((item) => item.value), 1);
+  const heatDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
   return (
     <ModuleLayout
@@ -79,50 +128,71 @@ export default function OverviewPage() {
       subtitle="Enterprise-grade supermarket telemetry across sales, inventory health, staff performance, and customer engagement."
     >
       <div className="space-y-8">
-        {/* Luxury Supermarket Hero Banner */}
-        <div className="relative overflow-hidden rounded-3xl border border-slate-200/80 bg-slate-950 text-white shadow-xl">
-          <div
-            className="absolute inset-0 bg-cover bg-center opacity-40 mix-blend-luminosity"
-            style={{ backgroundImage: "url('/images/supermarket_hero.jpg')" }}
-          ></div>
-          <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/80 to-transparent"></div>
-
-          <div className="relative z-10 flex flex-col justify-between p-6 md:p-10 lg:flex-row lg:items-center">
-            <div className="max-w-2xl space-y-3">
-              <div className="flex items-center gap-2">
-                <span className="flex items-center gap-1.5 rounded-full bg-emerald-500/20 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-400 border border-emerald-500/30">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  Premium Retail Hub
+        <div className="relative overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_90%_0%,#d1fae5_0%,transparent_35%)]" />
+          <div className="relative grid gap-8 p-6 md:p-8 lg:grid-cols-[minmax(0,1fr)_minmax(300px,380px)] lg:p-10">
+            <div className="min-w-0 self-center">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-3 py-1.5 text-[11px] font-bold uppercase tracking-[0.14em] text-emerald-700">
+                  <Sparkles className="h-5 w-5 shrink-0" strokeWidth={2.25} />
+                  Operations overview
                 </span>
-                <span className="text-xs text-slate-400 font-mono">
-                  {dashboard?.metricDate ? `Metrics for ${dashboard.metricDate}` : 'Loading metrics...'}
+                <span className="text-xs font-medium text-slate-400">
+                  {dashboard?.metricDate ? `Last updated ${dashboard.metricDate}` : 'Preparing live metrics'}
                 </span>
               </div>
-              <h2 className="text-2xl font-black tracking-tight text-white md:text-4xl">
-                Welcome back, {user?.name || 'Store Director'}
+              <h2 className="mt-5 max-w-2xl text-3xl font-black tracking-tight text-slate-950 md:text-5xl">
+                Good morning, {user?.name || 'Store Director'}.
+                <span className="mt-1 block text-emerald-600">Here is your store at a glance.</span>
               </h2>
-              <p className="text-sm text-slate-300 leading-relaxed max-w-xl">
-                Real-time central command for stock logistics, active cash registers, customer transactions, and automated supplier replenishment.
+              <p className="mt-5 max-w-xl text-sm leading-7 text-slate-600 md:text-base">
+                Monitor the numbers that matter, spot operational changes early, and keep every part of your supermarket moving from one focused workspace.
               </p>
+              <div className="mt-7 flex flex-wrap gap-2 text-xs font-semibold text-slate-500">
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">Live sales visibility</span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">Inventory health</span>
+                <span className="rounded-full border border-slate-200 bg-white px-3 py-1.5">Team-ready insights</span>
+              </div>
             </div>
 
-            <div className="mt-6 flex flex-wrap items-center gap-3 lg:mt-0">
+            <div className="flex min-w-0 flex-col gap-4">
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-bold uppercase tracking-[0.14em] text-slate-700">Report period</p>
+                    <p className="mt-1 text-[11px] text-slate-500">Adjust the data shown below</p>
+                  </div>
+                  <Calendar className="h-5 w-5 shrink-0 text-emerald-600" strokeWidth={2.25} />
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-slate-600">
+                    <span>Start date</span>
+                    <input type="date" value={startDate} max={endDate} onChange={(event) => setStartDate(event.target.value)} className="min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
+                  </label>
+                  <label className="flex min-w-0 flex-col gap-1.5 text-xs font-semibold text-slate-600">
+                    <span>End date</span>
+                    <input type="date" value={endDate} min={startDate} max={today} onChange={(event) => setEndDate(event.target.value)} className="min-w-0 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-xs text-slate-800 shadow-sm outline-none focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100" />
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-col gap-3 sm:flex-row lg:flex-col xl:flex-row">
               <Link
                 href="/pos"
                 className="flex items-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 px-5 py-3 text-sm font-bold text-slate-950 shadow-lg shadow-emerald-500/20 transition hover:from-emerald-400 hover:to-teal-400 active:scale-95"
               >
-                <ShoppingCart className="h-4 w-4" />
+                <ShoppingCart className="h-[22px] w-[22px] shrink-0" strokeWidth={2.25} />
                 <span>Open POS Terminal</span>
               </Link>
               <Link
                 href="/inventory"
-                className="flex items-center gap-2 rounded-2xl border border-white/20 bg-white/10 px-5 py-3 text-sm font-bold text-white backdrop-blur-md transition hover:bg-white/20"
+                className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800 active:scale-95"
               >
-                <Boxes className="h-4 w-4" />
+                <Boxes className="h-[22px] w-[22px] shrink-0" strokeWidth={2.25} />
                 <span>Stock Audit</span>
               </Link>
             </div>
           </div>
+        </div>
         </div>
 
         {/* Executive KPI Metrics */}
@@ -133,7 +203,7 @@ export default function OverviewPage() {
             subtitle="Today's paid register intake"
             accent="emerald"
             icon={TrendingUp}
-            growth={formatComparison(dashboard?.comparisons?.grossSales, 'vs yesterday', loading)}
+            growth={formatComparison(dashboard?.comparisons?.grossSales, dashboard?.range?.days > 1 ? 'vs previous period' : 'vs yesterday', loading)}
           />
           <StatCard
             label="Inventory Valuation"
@@ -157,8 +227,55 @@ export default function OverviewPage() {
             subtitle="Cash & card checkout tickets"
             accent="amber"
             icon={Receipt}
-            growth={formatComparison(dashboard?.comparisons?.transactions, 'vs yesterday', loading)}
+            growth={formatComparison(dashboard?.comparisons?.transactions, dashboard?.range?.days > 1 ? 'vs previous period' : 'vs yesterday', loading)}
           />
+        </div>
+
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900">Sales trend</h3>
+                <p className="text-xs text-slate-500">Daily paid sales for the selected range</p>
+              </div>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-bold text-emerald-700">
+                {formatComparison(dashboard?.comparisons?.grossSales, 'vs previous period', loading)}
+              </span>
+            </div>
+            <div className="mt-6 flex h-44 items-end gap-1.5">
+              {trend.length === 0 ? (
+                <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">No paid sales in this range.</div>
+              ) : trend.map((item) => (
+                <div key={item.label} className="group flex h-full min-w-0 flex-1 flex-col justify-end" title={`${item.label}: $${item.value.toFixed(2)}`}>
+                  <div className="w-full rounded-t-md bg-gradient-to-t from-emerald-600 to-teal-300 transition group-hover:from-emerald-400" style={{ height: `${Math.max((item.value / maxTrend) * 100, item.value ? 4 : 1)}%` }} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-2 flex justify-between gap-3 text-[10px] text-slate-400">
+              <span className="truncate">{startDate || trend[0]?.label || '—'}</span>
+              <span className="truncate text-right">{endDate || trend[trend.length - 1]?.label || '—'}</span>
+            </div>
+          </section>
+          <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <div>
+              <h3 className="text-lg font-bold text-slate-900">Sales activity heatmap</h3>
+              <p className="text-xs text-slate-500">Revenue by day of week and hour</p>
+            </div>
+            <div className="mt-5 grid grid-cols-[2.5rem_repeat(24,minmax(0,1fr))] gap-1 text-[9px]">
+              <span />
+              {[0, 4, 8, 12, 16, 20].map((hour) => <span key={hour} className="col-span-4 text-center text-slate-400">{hour}:00</span>)}
+              {heatDays.map((day, dayIndex) => (
+                <Fragment key={day}>
+                  <span className="py-1 text-slate-400">{day}</span>
+                  {Array.from({ length: 24 }, (_, hour) => {
+                    const cell = heatmap.find((item) => item.day === dayIndex && item.hour === hour);
+                    const intensity = cell ? Math.max(15, (cell.value / maxHeat) * 100) : 0;
+                    return <span key={`${day}-${hour}`} title={`${day} ${hour}:00 — $${(cell?.value || 0).toFixed(2)}`} className="h-4 rounded-sm bg-emerald-500" style={{ opacity: intensity / 100 }} />;
+                  })}
+                </Fragment>
+              ))}
+            </div>
+          </section>
         </div>
 
         {/* Two-Column Insights & CMS Bulletins */}
@@ -186,9 +303,9 @@ export default function OverviewPage() {
                   >
                     <div className="flex items-start justify-between">
                       <div className={`flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br ${mod.tone} text-white shadow-md`}>
-                        <Icon className="h-5 w-5" />
+                        <Icon className="h-6 w-6 shrink-0" strokeWidth={2.1} />
                       </div>
-                      <ArrowUpRight className="h-4 w-4 text-slate-300 transition group-hover:text-emerald-600" />
+                      <ArrowUpRight className="h-5 w-5 shrink-0 text-slate-300 transition group-hover:text-emerald-600" strokeWidth={2.1} />
                     </div>
 
                     <div className="mt-4">
@@ -281,8 +398,8 @@ function StatCard({ label, value, subtitle, accent, icon: Icon, growth }) {
     <div className="min-w-0 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex min-w-0 items-start justify-between gap-3">
         <p className="min-w-0 break-words text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
-        <span className={`flex h-8 w-8 items-center justify-center rounded-xl border ${styles[accent]}`}>
-          <Icon className="h-4 w-4" />
+        <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border ${styles[accent]}`}>
+          <Icon className="h-[18px] w-[18px]" strokeWidth={2.1} />
         </span>
       </div>
       <div className="mt-4 flex min-w-0 flex-wrap items-baseline justify-between gap-2">

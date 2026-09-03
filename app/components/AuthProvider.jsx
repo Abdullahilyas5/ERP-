@@ -20,6 +20,13 @@ export function AuthProvider({ children }) {
         return;
       }
 
+      // Hydrate the shell immediately; validate the cached session in the background.
+      if (savedUser) {
+        setToken(savedToken);
+        setUser(savedUser);
+        setReady(true);
+      }
+
       try {
         const data = await apiFetch('/auth/me', { method: 'GET' });
         setStoredAuth(savedToken, data.user);

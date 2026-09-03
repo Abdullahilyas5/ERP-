@@ -16,11 +16,17 @@ export default function ReportsPage() {
   const [productPerformance, setProductPerformance] = useState([]);
   const [categoryPerformance, setCategoryPerformance] = useState([]);
   const [salesTrend, setSalesTrend] = useState([]);
+  const [stockMovement, setStockMovement] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [productPage, setProductPage] = useState(1);
+  const [categoryPage, setCategoryPage] = useState(1);
+  const [activityPage, setActivityPage] = useState(1);
 
   useEffect(() => {
     async function loadData() {
+      setLoading(true);
       try {
-        const response = await apiFetch('/reports');
+        const response = await apiFetch(`/reports?range=${selectedRange}${selectedWarehouse !== 'all' ? `&warehouse=${encodeURIComponent(selectedWarehouse)}` : ''}`);
         const data = response?.data ?? response ?? {};
         const rawWarehouseData = Array.isArray(data.warehouseData) ? data.warehouseData : Array.isArray(data.warehousePerformanceData) ? data.warehousePerformanceData : [];
         const normalizedWarehouseData = rawWarehouseData.map((item) => ({
@@ -39,7 +45,11 @@ export default function ReportsPage() {
           name: item?.name || item?.category || item?.label || 'Category',
           value: toNumber(item?.value ?? item?.share ?? item?.amount ?? 0),
         }));
-        const rawTrend = Array.isArray(data.salesTrend) ? data.salesTrend : [];
+        const rawTrend = Array.isArray(data.salesTrend)
+          ? data.salesTrend
+          : Array.isArray(data.revenueTrend)
+            ? data.revenueTrend
+            : [];
         const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
         const normalizedTrendData = rawTrend.map((item, index) => {
           if (typeof item === 'number') {
@@ -55,17 +65,24 @@ export default function ReportsPage() {
         setProductPerformance(normalizedProductData);
         setCategoryPerformance(normalizedCategoryData);
         setSalesTrend(normalizedTrendData);
+        setStockMovement(Array.isArray(data.stockMovement) ? data.stockMovement : []);
+        setProductPage(1);
+        setCategoryPage(1);
+        setActivityPage(1);
       } catch (err) {
         console.error(err);
         setWarehouseData([]);
         setProductPerformance([]);
         setCategoryPerformance([]);
         setSalesTrend([]);
+        setStockMovement([]);
+      } finally {
+        setLoading(false);
       }
     }
 
     loadData();
-  }, []);
+  }, [selectedRange, selectedWarehouse]);
 
   const filteredWarehouseData = useMemo(() => {
     if (selectedWarehouse === 'all') return warehouseData;
@@ -78,6 +95,18 @@ export default function ReportsPage() {
     ? filteredWarehouseData.reduce((sum, item) => sum + toNumber(item.margin), 0) / filteredWarehouseData.length
     : 0;
   const topProduct = productPerformance[0]?.name || 'N/A';
+  const pageSize = 5;
+  const visibleProducts = productPerformance.slice((productPage - 1) * pageSize, productPage * pageSize);
+  const visibleCategories = categoryPerformance.slice((categoryPage - 1) * pageSize, categoryPage * pageSize);
+  const visibleActivity = stockMovement.slice((activityPage - 1) * pageSize, activityPage * pageSize);
+  const categoryTotal = categoryPerformance.reduce((sum, item) => sum + toNumber(item.value), 0);
+  const revenueChartMax = Math.max(...salesTrend.map((item) => toNumber(item.value)), 1);
+  const revenueChartPoints = salesTrend.map((point, index) => ({
+    ...point,
+    x: salesTrend.length > 1 ? 56 + (index * 688) / (salesTrend.length - 1) : 400,
+    y: 238 - (toNumber(point.value) / revenueChartMax) * 190,
+  }));
+  const revenueChartLine = revenueChartPoints.map((point) => `${point.x},${point.y}`).join(' ');
 
   return (
     <ModuleLayout
@@ -110,16 +139,16 @@ export default function ReportsPage() {
         </div>
       }
     >
-      <div className="space-y-6">
-        <div className="grid gap-4 md:grid-cols-4">
+      <div className="space-y-5">
+        <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-4">
           <SummaryCard label="Revenue" value={`$${(totalRevenue / 1000).toFixed(1)}K`} subtitle="Gross sales" accent="emerald" />
           <SummaryCard label="Net sales" value={`$${(netSales / 1000).toFixed(1)}K`} subtitle="Recorded paid sales" accent="sky" />
           <SummaryCard label="Avg margin" value={`${avgMargin.toFixed(1)}%`} subtitle="Storewide" accent="violet" />
           <SummaryCard label="Top product" value={topProduct} subtitle="Best seller" accent="amber" />
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[1.4fr_0.6fr]">
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="grid min-w-0 gap-5 xl:grid-cols-[minmax(0,1.4fr)_minmax(260px,0.6fr)]">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Sales trend</p>
@@ -128,42 +157,66 @@ export default function ReportsPage() {
               <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">Live data</span>
             </div>
 
-            <div className="flex h-64 items-end gap-2">
-              {salesTrend.length > 0 ? salesTrend.map((point, index) => {
-                const height = Math.max(12, Number(point.value || 0) / Math.max(...salesTrend.map((item) => Number(item.value || 0)), 1) * 100);
-                return (
-                  <div key={`${point.label}-${index}`} className="flex flex-1 flex-col items-center gap-2">
-                    <div className="w-full rounded-t-2xl bg-gradient-to-t from-emerald-500 to-emerald-300" style={{ height: `${height}%` }} />
-                    <span className="text-[10px] text-slate-400">{point.label}</span>
-                  </div>
-                );
-              }) : <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">No sales trend data available.</div>}
+            <div data-testid="revenue-performance-chart" className="min-h-[240px] min-w-0">
+              {loading ? (
+                <div className="flex h-60 items-center justify-center text-sm text-slate-500">Loading revenue performance...</div>
+              ) : salesTrend.length > 0 ? (
+                <svg viewBox="0 0 800 290" className="h-60 w-full overflow-visible" role="img" aria-label="Revenue performance trend">
+                  {[0, 25, 50, 75, 100].map((percentage) => {
+                    const y = 238 - (percentage / 100) * 190;
+                    return (
+                      <g key={percentage}>
+                        <line x1="56" x2="744" y1={y} y2={y} stroke="#e2e8f0" strokeDasharray="4 5" />
+                        <text x="46" y={y + 4} textAnchor="end" fill="#94a3b8" fontSize="11">{Math.round((revenueChartMax * percentage) / 100).toLocaleString()}</text>
+                      </g>
+                    );
+                  })}
+                  <line x1="56" x2="744" y1="238" y2="238" stroke="#cbd5e1" />
+                  <polyline points={revenueChartLine} fill="none" stroke="#059669" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+                  {revenueChartPoints.map((point) => (
+                    <g key={`${point.label}-${point.x}`}>
+                      <circle cx={point.x} cy={point.y} r="6" fill="white" stroke="#059669" strokeWidth="4" />
+                      <text x={point.x} y={point.y - 14} textAnchor="middle" fill="#334155" fontSize="11" fontWeight="600">{toNumber(point.value).toLocaleString()}</text>
+                      <text x={point.x} y="263" textAnchor="middle" fill="#64748b" fontSize="11">{point.label}</text>
+                    </g>
+                  ))}
+                </svg>
+              ) : (
+                <div className="flex h-60 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-sm text-slate-500">No sales trend data available.</div>
+              )}
             </div>
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Sales by category</p>
             <div className="mt-6 space-y-4">
-              {categoryPerformance.length > 0 ? categoryPerformance.map((item) => (
+              {visibleCategories.length > 0 ? visibleCategories.map((item) => {
+                const share = categoryTotal > 0 ? (toNumber(item.value) / categoryTotal) * 100 : 0;
+                return (
                 <div key={item.name}>
                   <div className="mb-1 flex items-center justify-between text-sm">
                     <span className="text-slate-600">{item.name}</span>
-                    <span className="font-semibold text-slate-900">{Number(item.value || 0).toFixed(0)}%</span>
+                    <span className="font-semibold text-slate-900">{share.toFixed(0)}%</span>
                   </div>
                   <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.min(Number(item.value || 0), 100)}%` }} />
+                    <div className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.min(share, 100)}%` }} />
                   </div>
                 </div>
-              )) : <div className="text-sm text-slate-500">No category performance data available.</div>}
+                );
+              }) : <div className="text-sm text-slate-500">No category performance data available.</div>}
             </div>
+            <Pagination page={categoryPage} pageSize={pageSize} total={categoryPerformance.length} onChange={setCategoryPage} />
           </section>
         </div>
 
-        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Top products</p>
+        <div className="grid min-w-0 gap-5 xl:grid-cols-2">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Top products</p>
+              <span className="text-xs text-slate-400">{productPerformance.length} total</span>
+            </div>
             <div className="mt-5 space-y-4">
-              {productPerformance.length > 0 ? productPerformance.map((product) => (
+              {visibleProducts.length > 0 ? visibleProducts.map((product) => (
                 <div key={product.name} className="flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-xs font-bold text-emerald-700">#{Number(product.sales || 0)}</div>
                   <div className="min-w-0 flex-1">
@@ -171,15 +224,46 @@ export default function ReportsPage() {
                     <div className="mt-1 h-2 w-full overflow-hidden rounded-full bg-slate-100">
                       <div className="h-full rounded-full bg-gradient-to-r from-sky-500 to-emerald-500" style={{ width: `${Math.min((Number(product.sales || 0) / Math.max(...productPerformance.map((item) => Number(item.sales || 0)), 1)) * 100, 100)}%` }} />
                     </div>
+
                   </div>
                 </div>
               )) : <div className="text-sm text-slate-500">No product performance data available.</div>}
             </div>
+            <Pagination page={productPage} pageSize={pageSize} total={productPerformance.length} onChange={setProductPage} />
           </section>
 
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 flex items-center justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Stock movement</p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">Recent inventory activity</h3>
+              </div>
+              <span className="text-right text-xs text-slate-500">{stockMovement.length} records</span>
+            </div>
+            {stockMovement.length === 0 ? (
+              <p className="text-sm text-slate-500">No stock movement recorded.</p>
+            ) : (
+              <div className="grid max-h-[32rem] gap-3 overflow-y-auto pr-1 md:grid-cols-2">
+                {visibleActivity.map((movement) => {
+                  const qty = toNumber(movement.qty);
+                  return (
+                    <div key={movement._id} className="flex items-center justify-between rounded-2xl border border-slate-100 bg-slate-50 p-3">
+                      <div>
+                        <p className="font-medium text-slate-800">{movement.productId?.name || movement.product?.name || movement.item || 'Inventory item'}</p>
+                        <p className="text-xs capitalize text-slate-500">{movement.type || movement.status || 'movement'} · {movement.notes || movement.reason || 'Recorded movement'}</p>
+                      </div>
+                      <span className={`font-semibold ${qty >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{qty >= 0 ? '+' : ''}{qty}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <Pagination page={activityPage} pageSize={pageSize} total={stockMovement.length} onChange={setActivityPage} />
+          </section>
+
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm xl:col-span-2">
             <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Warehouse performance</p>
-            <div className="mt-5 space-y-4">
+            <div className="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {filteredWarehouseData.length > 0 ? filteredWarehouseData.map((item) => (
                 <div key={item.warehouse || item.name} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
                   <div className="flex items-center justify-between">
@@ -192,7 +276,7 @@ export default function ReportsPage() {
                       <p className="text-xs text-slate-500">Revenue</p>
                     </div>
                     <div className="h-16 w-28 overflow-hidden rounded-xl bg-white">
-                      <div className="h-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.min(Number(item.margin || 0) * 3, 100)}%` }} />
+                      <div className="h-full rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500" style={{ width: `${Math.min(Math.max(Number(item.revenue || 0) / Math.max(...filteredWarehouseData.map((warehouse) => Number(warehouse.revenue || 0)), 1) * 100, 6), 100)}%` }} />
                     </div>
                   </div>
                 </div>
@@ -202,6 +286,21 @@ export default function ReportsPage() {
         </div>
       </div>
     </ModuleLayout>
+  );
+}
+
+function Pagination({ page, pageSize, total, onChange }) {
+  const totalPages = Math.ceil(total / pageSize);
+  if (totalPages <= 1) return null;
+
+  return (
+    <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4">
+      <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
+      <div className="flex gap-2">
+        <button type="button" disabled={page === 1} onClick={() => onChange(page - 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+        <button type="button" disabled={page === totalPages} onClick={() => onChange(page + 1)} className="rounded-lg border border-slate-200 px-3 py-1.5 text-xs font-semibold text-slate-600 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+      </div>
+    </div>
   );
 }
 

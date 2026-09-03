@@ -22,6 +22,10 @@ const defaultExpenseForm = {
   status: 'Recorded',
 };
 
+function generateExpenseReference() {
+  return `EXP-${Date.now().toString().slice(-8)}`;
+}
+
 export default function ExpensesPage() {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState('all');
@@ -64,6 +68,15 @@ export default function ExpensesPage() {
     loadData();
     loadWarehouses();
   }, []);
+
+  useEffect(() => {
+    if (!isFormOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isFormOpen]);
 
   const warehouseExpenseBreakdown = useMemo(() => {
     const uniqueWarehouses = Array.from(new Set(expenseRecords.map((item) => item.warehouse).filter(Boolean)));
@@ -195,10 +208,10 @@ export default function ExpensesPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Transaction list</p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">Expense records</h3>
               </div>
-              <button type="button" onClick={() => setIsFormOpen(true)} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Add expense</button>
+              <button type="button" onClick={() => { setForm({ ...defaultExpenseForm, ref: generateExpenseReference() }); setIsFormOpen(true); }} className="rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700">Add expense</button>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                   <tr>
@@ -277,9 +290,9 @@ export default function ExpensesPage() {
       </div>
 
       {isFormOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <form onSubmit={handleSubmit} className="w-full max-w-2xl rounded-3xl bg-white p-6 shadow-2xl">
-            <div className="mb-5 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-950/40 p-4">
+          <form onSubmit={handleSubmit} className="max-h-[calc(100vh-2rem)] w-full max-w-2xl overflow-y-auto overscroll-contain rounded-3xl bg-white p-6 shadow-2xl">
+            <div className="sticky top-0 z-10 mb-5 flex items-center justify-between bg-white pb-1">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Operational cost</p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">Add expense</h3>
@@ -290,7 +303,10 @@ export default function ExpensesPage() {
             <div className="grid gap-4 md:grid-cols-2">
               <label className="block text-sm text-slate-600">
                 <span className="mb-1.5 block font-medium">Expense reference</span>
-                <input value={form.ref} onChange={(event) => setForm((current) => ({ ...current, ref: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-sky-500 focus:bg-white" placeholder="EXP-101" />
+                <div className="flex gap-2">
+                  <input value={form.ref} onChange={(event) => setForm((current) => ({ ...current, ref: event.target.value }))} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 outline-none focus:border-sky-500 focus:bg-white" placeholder="Auto-generated if blank" />
+                  <button type="button" onClick={() => setForm((current) => ({ ...current, ref: generateExpenseReference() }))} className="rounded-xl border border-sky-200 px-3 text-xs font-semibold text-sky-700">Auto</button>
+                </div>
               </label>
               <label className="block text-sm text-slate-600">
                 <span className="mb-1.5 block font-medium">Status</span>

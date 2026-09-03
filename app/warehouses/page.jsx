@@ -147,7 +147,7 @@ export default function WarehousesPage() {
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm text-slate-700">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+              <thead className="bg-slate-900 text-xs uppercase tracking-[0.16em] text-white">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Warehouse</th>
                   <th className="px-4 py-3 font-semibold">Location</th>
@@ -232,8 +232,8 @@ export default function WarehousesPage() {
       </div>
 
       {formOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <form onSubmit={handleCreateWarehouse} className="w-full max-w-lg rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-950/40 p-4">
+          <form onSubmit={handleCreateWarehouse} className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Warehouse master</p>

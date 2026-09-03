@@ -258,7 +258,7 @@ export default function UsersPage() {
           {/* Table */}
           <div className="overflow-x-auto">
             <table className="w-full text-left text-sm text-slate-600">
-              <thead className="border-b border-slate-100 bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
+              <thead className="border-b border-slate-800 bg-slate-900 text-xs font-semibold uppercase tracking-[0.14em] text-white">
                 <tr>
                   <th className="px-6 py-3.5">Staff Member</th>
                   <th className="px-5 py-3.5">Email Address</th>
@@ -286,7 +286,6 @@ export default function UsersPage() {
                   </tr>
                 ) : (
                   filteredUsers.map((u) => {
-                    const initials = u.name ? u.name.substring(0, 2).toUpperCase() : 'US';
                     const activePerms = u.permissions?.length
                       ? u.permissions
                       : ROLE_DEFAULT_PRESETS[u.role] || [];
@@ -296,14 +295,8 @@ export default function UsersPage() {
                       <tr key={u.id || u._id} className="transition hover:bg-slate-50/60">
                         {/* Member Info */}
                         <td className="px-6 py-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-600 to-teal-700 text-xs font-bold text-white shadow-sm">
-                              {initials}
-                            </div>
-                            <div>
-                              <p className="font-bold text-slate-900">{u.name}</p>
-                              <p className="text-[11px] text-slate-400 font-mono">ID: {(u.id || u._id)?.slice(-6)}</p>
-                            </div>
+                          <div>
+                            <p className="font-bold text-slate-900">{u.name}</p>
                           </div>
                         </td>
 
@@ -752,8 +745,8 @@ function UserFormModal({ initialData, onClose, onSuccess }) {
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div>
             <h3 className="text-lg font-bold text-slate-900">

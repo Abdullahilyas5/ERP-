@@ -44,25 +44,32 @@ function computePricingValues(costPrice, sellingPrice) {
 export default function ProductsPage() {
   const [products, setProducts] = useState([]);
   const [warehouses, setWarehouses] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [formOpen, setFormOpen] = useState(false);
   const [editingId, setEditingId] = useState(null);
   const [form, setForm] = useState(emptyForm);
+  const [skuManuallyEdited, setSkuManuallyEdited] = useState(false);
   const [search, setSearch] = useState('');
   const [warehouseFilter, setWarehouseFilter] = useState('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
+  const [productPage, setProductPage] = useState(1);
+  const pageSize = 8;
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [productResponse, warehouseResponse] = await Promise.all([
+        const [productResponse, warehouseResponse, supplierResponse] = await Promise.all([
           apiFetch('/products?page=1&limit=200'),
           apiFetch('/warehouses?page=1&limit=200').catch(() => apiFetch('/pos/warehouses')),
+          apiFetch('/suppliers?page=1&limit=200').catch(() => ({ suppliers: [] })),
         ]);
         const nextProducts = productResponse?.items ?? productResponse?.data ?? productResponse ?? [];
         const nextWarehouses = warehouseResponse?.items ?? warehouseResponse?.data?.items ?? warehouseResponse?.data ?? warehouseResponse ?? [];
+        const nextSuppliers = supplierResponse?.suppliers ?? supplierResponse?.items ?? supplierResponse?.data ?? supplierResponse ?? [];
         if (Array.isArray(nextProducts)) setProducts(nextProducts);
         if (Array.isArray(nextWarehouses)) setWarehouses(nextWarehouses);
+        if (Array.isArray(nextSuppliers)) setSuppliers(nextSuppliers);
       } catch (err) {
         console.error(err);
         setProducts([]);
@@ -89,6 +96,10 @@ export default function ProductsPage() {
     });
   }, [products, search, warehouseFilter, categoryFilter]);
 
+  const totalProductPages = Math.max(1, Math.ceil(filteredProducts.length / pageSize));
+  const currentProductPage = Math.min(productPage, totalProductPages);
+  const visibleProducts = filteredProducts.slice((currentProductPage - 1) * pageSize, currentProductPage * pageSize);
+
   const totalUnits = products.reduce((sum, product) => sum + Number(product.stock || 0), 0);
   const lowStockCount = products.filter((product) => Number(product.stock || 0) <= Number(product.reorderLevel || 0)).length;
   const averageMargin =
@@ -102,6 +113,7 @@ export default function ProductsPage() {
       ...emptyForm,
       sku: generateSuggestedSku(emptyForm.category, products),
     });
+    setSkuManuallyEdited(false);
     setFormOpen(true);
   }
 
@@ -116,6 +128,7 @@ export default function ProductsPage() {
       markupPercent: Number(product.markupPercent || 0),
       marginPercent: Number(product.marginPercent || 0),
     });
+    setSkuManuallyEdited(true);
     setFormOpen(true);
   }
 
@@ -123,13 +136,18 @@ export default function ProductsPage() {
     setFormOpen(false);
     setEditingId(null);
     setForm(emptyForm);
+    setSkuManuallyEdited(false);
   }
 
   function handleFieldChange(field, value) {
+    if (field === 'sku') {
+      setSkuManuallyEdited(true);
+    }
+
     setForm((current) => {
       const next = { ...current, [field]: value };
 
-      if (field === 'category' && !editingId && !current.sku) {
+      if (field === 'category' && !editingId && !skuManuallyEdited) {
         next.sku = generateSuggestedSku(value, products);
       }
 
@@ -221,7 +239,10 @@ export default function ProductsPage() {
               <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-slate-400">🔎</span>
               <input
                 value={search}
-                onChange={(event) => setSearch(event.target.value)}
+                onChange={(event) => {
+                  setSearch(event.target.value);
+                  setProductPage(1);
+                }}
                 placeholder="Search products, SKU or warehouse"
                 className="w-full rounded-xl border border-slate-200 bg-slate-50 py-2 pl-10 pr-4 text-sm text-slate-800 focus:border-emerald-500 focus:bg-white focus:outline-none"
               />
@@ -230,7 +251,10 @@ export default function ProductsPage() {
             <div className="flex flex-wrap gap-3">
               <select
                 value={warehouseFilter}
-                onChange={(event) => setWarehouseFilter(event.target.value)}
+                onChange={(event) => {
+                  setWarehouseFilter(event.target.value);
+                  setProductPage(1);
+                }}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
               >
                 <option value="all">All warehouses</option>
@@ -241,7 +265,10 @@ export default function ProductsPage() {
 
               <select
                 value={categoryFilter}
-                onChange={(event) => setCategoryFilter(event.target.value)}
+                onChange={(event) => {
+                  setCategoryFilter(event.target.value);
+                  setProductPage(1);
+                }}
                 className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700"
               >
                 <option value="all">All categories</option>
@@ -253,18 +280,18 @@ export default function ProductsPage() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="min-w-full text-left text-sm text-slate-700">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+            <table className="min-w-[1100px] w-full text-left text-sm text-slate-700">
+              <thead className="bg-slate-800 text-xs uppercase tracking-[0.12em] text-white">
                 <tr>
-                  <th className="px-4 py-3 font-semibold">Product</th>
-                  <th className="px-4 py-3 font-semibold">SKU</th>
-                  <th className="px-4 py-3 font-semibold">Warehouse</th>
-                  <th className="px-4 py-3 font-semibold">Unit</th>
-                  <th className="px-4 py-3 font-semibold text-right">Cost</th>
-                  <th className="px-4 py-3 font-semibold text-right">Selling</th>
-                  <th className="px-4 py-3 font-semibold text-right">Margin</th>
-                  <th className="px-4 py-3 font-semibold text-right">Stock</th>
-                  <th className="px-4 py-3 font-semibold text-right">Actions</th>
+                  <th className="w-[22%] whitespace-nowrap px-4 py-3.5 font-semibold">Product</th>
+                  <th className="w-[12%] whitespace-nowrap px-4 py-3.5 font-semibold">SKU</th>
+                  <th className="w-[17%] whitespace-nowrap px-4 py-3.5 font-semibold">Warehouse</th>
+                  <th className="w-[9%] whitespace-nowrap px-4 py-3.5 font-semibold">Unit</th>
+                  <th className="w-[9%] whitespace-nowrap px-4 py-3.5 text-right font-semibold">Cost</th>
+                  <th className="w-[10%] whitespace-nowrap px-4 py-3.5 text-right font-semibold">Selling</th>
+                  <th className="w-[9%] whitespace-nowrap px-4 py-3.5 text-right font-semibold">Margin</th>
+                  <th className="w-[7%] whitespace-nowrap px-4 py-3.5 text-right font-semibold">Stock</th>
+                  <th className="w-[15%] whitespace-nowrap px-4 py-3.5 text-right font-semibold">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 bg-white">
@@ -275,18 +302,18 @@ export default function ProductsPage() {
                     </td>
                   </tr>
                 ) : (
-                  filteredProducts.map((product) => (
-                    <tr key={product.id} className="hover:bg-slate-50">
+                  visibleProducts.map((product) => (
+                    <tr key={product._id || product.id} className="align-middle hover:bg-slate-50">
                       <td className="px-4 py-4">
                         <div className="font-semibold text-slate-900">{product.name}</div>
                         <div className="text-xs text-slate-500">{product.category}</div>
                       </td>
-                      <td className="px-4 py-4 font-medium text-slate-700">{product.sku}</td>
+                      <td className="whitespace-nowrap px-4 py-4 font-medium text-slate-700">{product.sku}</td>
                       <td className="px-4 py-4 text-slate-700">{product.warehouseName || product.warehouseId?.name || 'Unassigned'}</td>
-                      <td className="px-4 py-4 text-slate-700">{product.unit || 'Unit'}</td>
-                      <td className="px-4 py-4 text-right font-semibold text-slate-900">${Number(product.costPrice || 0).toFixed(2)}</td>
-                      <td className="px-4 py-4 text-right font-semibold text-slate-900">${Number(product.sellingPrice || product.price || 0).toFixed(2)}</td>
-                      <td className="px-4 py-4 text-right font-semibold text-emerald-600">{Number(product.marginPercent || 0).toFixed(1)}%</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-slate-700">{product.unit || 'Unit'}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-slate-900">${Number(product.costPrice || 0).toFixed(2)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-slate-900">${Number(product.sellingPrice || product.price || 0).toFixed(2)}</td>
+                      <td className="whitespace-nowrap px-4 py-4 text-right font-semibold text-emerald-600">{Number(product.marginPercent || 0).toFixed(1)}%</td>
                       <td className="px-4 py-4 text-right">
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${Number(product.stock || 0) <= Number(product.reorderLevel || 0) ? 'bg-amber-100 text-amber-700' : 'bg-emerald-100 text-emerald-700'}`}>
                           {product.stock}
@@ -295,7 +322,7 @@ export default function ProductsPage() {
                       <td className="px-4 py-4 text-right">
                         <div className="flex justify-end gap-2">
                           <button type="button" onClick={() => openEditProduct(product)} className="rounded-md border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">Edit</button>
-                          <button type="button" onClick={() => handleDelete(product.id)} className="rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50">Delete</button>
+                          <button type="button" onClick={() => handleDelete(product._id || product.id)} className="rounded-md border border-rose-200 px-2.5 py-1.5 text-xs font-medium text-rose-600 hover:bg-rose-50">Delete</button>
                         </div>
                       </td>
                     </tr>
@@ -303,6 +330,32 @@ export default function ProductsPage() {
                 )}
               </tbody>
             </table>
+          </div>
+          <div className="flex flex-col gap-3 border-t border-slate-100 px-4 py-3 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+            <span>
+              {filteredProducts.length === 0
+                ? 'Showing 0 products'
+                : `Showing ${(currentProductPage - 1) * pageSize + 1}-${Math.min(currentProductPage * pageSize, filteredProducts.length)} of ${filteredProducts.length} products`}
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setProductPage((current) => Math.max(1, current - 1))}
+                disabled={currentProductPage === 1}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Previous
+              </button>
+              <span className="min-w-16 text-center font-semibold text-slate-700">Page {currentProductPage} of {totalProductPages}</span>
+              <button
+                type="button"
+                onClick={() => setProductPage((current) => Math.min(totalProductPages, current + 1))}
+                disabled={currentProductPage === totalProductPages}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Next
+              </button>
+            </div>
           </div>
         </section>
       </div>
@@ -320,12 +373,27 @@ export default function ProductsPage() {
 
             <form onSubmit={handleSubmit} className="space-y-5">
               <div className="grid gap-4 md:grid-cols-2">
-                <Field label="SKU">
-                  <input
-                    value={form.sku}
-                    onChange={(event) => handleFieldChange('sku', event.target.value)}
-                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-emerald-500 focus:bg-white focus:outline-none"
-                  />
+                <Field label={editingId ? 'SKU' : 'SKU (auto-generated)'}>
+                  <div className="flex gap-2">
+                    <input
+                      value={form.sku}
+                      onChange={(event) => handleFieldChange('sku', event.target.value)}
+                      className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-emerald-500 focus:bg-white focus:outline-none"
+                    />
+                    {!editingId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSkuManuallyEdited(false);
+                          setForm((current) => ({ ...current, sku: generateSuggestedSku(current.category, products) }));
+                        }}
+                        className="rounded-xl border border-emerald-200 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-50"
+                      >
+                        Regenerate
+                      </button>
+                    )}
+                  </div>
+                  {!editingId && <p className="mt-1 text-xs text-slate-500">Updates automatically when you choose a category.</p>}
                 </Field>
                 <Field label="Product name">
                   <input
@@ -368,6 +436,18 @@ export default function ProductsPage() {
                   >
                     {warehouses.map((warehouse) => (
                       <option key={warehouse._id || warehouse.id} value={warehouse._id || warehouse.id}>{warehouse.name || warehouse.warehouseName}</option>
+                    ))}
+                  </select>
+                </Field>
+                <Field label="Supplier / Vendor">
+                  <select
+                    value={String(form.supplierId?._id || form.supplierId || '')}
+                    onChange={(event) => handleFieldChange('supplierId', event.target.value || '')}
+                    className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm focus:border-emerald-500 focus:bg-white focus:outline-none"
+                  >
+                    <option value="">No supplier assigned</option>
+                    {suppliers.map((supplier) => (
+                      <option key={supplier._id || supplier.id} value={supplier._id || supplier.id}>{supplier.name}</option>
                     ))}
                   </select>
                 </Field>

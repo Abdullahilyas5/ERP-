@@ -5,6 +5,17 @@ import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
 
 const methods = ['Cash', 'Card', 'Bank Transfer', 'Digital Wallet', 'Cheque'];
+const statuses = ['Pending', 'Completed', 'Partially Paid', 'Failed', 'Cancelled', 'Refunded', 'Partially Refunded', 'Reconciled'];
+const statusStyles = {
+  Pending: 'bg-amber-100 text-amber-700',
+  Completed: 'bg-emerald-100 text-emerald-700',
+  Reconciled: 'bg-emerald-100 text-emerald-700',
+  'Partially Paid': 'bg-sky-100 text-sky-700',
+  Refunded: 'bg-violet-100 text-violet-700',
+  'Partially Refunded': 'bg-violet-100 text-violet-700',
+  Failed: 'bg-rose-100 text-rose-700',
+  Cancelled: 'bg-slate-200 text-slate-600',
+};
 const toNumber = (value) => {
   const numeric = Number(value);
   return Number.isFinite(numeric) ? numeric : 0;
@@ -33,9 +44,12 @@ export default function PaymentsPage() {
   const [query, setQuery] = useState('');
   const [directionFilter, setDirectionFilter] = useState('all');
   const [methodFilter, setMethodFilter] = useState('all');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [warehouseFilter, setWarehouseFilter] = useState('all');
   const [form, setForm] = useState(defaultForm);
   const [saving, setSaving] = useState(false);
+  const [paymentPage, setPaymentPage] = useState(1);
+  const paymentPageSize = 8;
 
   useEffect(() => {
     async function loadData() {
@@ -50,6 +64,7 @@ export default function PaymentsPage() {
         const nextWarehouses = warehouseResponse?.items ?? warehouseResponse?.data ?? warehouseResponse ?? [];
         const normalizedRecords = nextRecords.map((record, index) => ({
           id: record.id || record.paymentId || record._id || `PAY-${index + 1}`,
+          apiId: record._id || record.id,
           type: record.type || 'Customer Payment',
           direction: record.direction || (record.amount >= 0 ? 'incoming' : 'outgoing'),
           party: record.party || record.customer || record.supplier || record.name || 'Walk-in customer',
@@ -97,10 +112,18 @@ export default function PaymentsPage() {
           .includes(query.toLowerCase());
       const matchesDirection = directionFilter === 'all' || record.direction === directionFilter;
       const matchesMethod = methodFilter === 'all' || record.method === methodFilter;
+      const matchesStatus = statusFilter === 'all' || record.status === statusFilter;
       const matchesWarehouse = warehouseFilter === 'all' || record.warehouseId === warehouseFilter || record.warehouse === warehouseFilter;
-      return matchesQuery && matchesDirection && matchesMethod && matchesWarehouse;
+      return matchesQuery && matchesDirection && matchesMethod && matchesStatus && matchesWarehouse;
     });
-  }, [records, query, directionFilter, methodFilter, warehouseFilter]);
+  }, [records, query, directionFilter, methodFilter, warehouseFilter, statusFilter]);
+  const paymentTotalPages = Math.max(1, Math.ceil(filteredRecords.length / paymentPageSize));
+  const currentPaymentPage = Math.min(paymentPage, paymentTotalPages);
+  const visibleRecords = filteredRecords.slice((currentPaymentPage - 1) * paymentPageSize, currentPaymentPage * paymentPageSize);
+
+  function resetPaymentPage() {
+    setPaymentPage(1);
+  }
 
   const summary = useMemo(() => {
     const totalPayments = records.length;
@@ -166,6 +189,7 @@ export default function PaymentsPage() {
       const nextRecord = {
         ...payload,
         id: created.paymentId || created._id || payload.ref,
+        apiId: created._id,
       };
       setRecords((current) => [nextRecord, ...current]);
       setSelectedRecord(nextRecord);
@@ -175,6 +199,26 @@ export default function PaymentsPage() {
       alert(error?.message || 'Failed to record payment');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleStatusChange(status) {
+    if (!selectedRecord || !selectedRecord.apiId || status === selectedRecord.status) return;
+    const previousStatus = selectedRecord.status;
+    setSelectedRecord((current) => ({ ...current, status }));
+    setRecords((current) => current.map((record) => record.id === selectedRecord.id ? { ...record, status } : record));
+    try {
+      const updated = await apiFetch(`/payments/${selectedRecord.apiId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status }),
+      });
+      const updatedStatus = updated?.status || status;
+      setSelectedRecord((current) => ({ ...current, status: updatedStatus }));
+      setRecords((current) => current.map((record) => record.id === selectedRecord.id ? { ...record, status: updatedStatus } : record));
+    } catch (error) {
+      setSelectedRecord((current) => ({ ...current, status: previousStatus }));
+      setRecords((current) => current.map((record) => record.id === selectedRecord.id ? { ...record, status: previousStatus } : record));
+      alert(error?.message || 'Failed to update payment status');
     }
   }
 
@@ -244,12 +288,7 @@ export default function PaymentsPage() {
                   </select>                </Field>
                 <Field label="Status">
                   <select value={form.status} onChange={(event) => setForm((current) => ({ ...current, status: event.target.value }))} className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm">
-                    <option value="Pending">Pending</option>
-                    <option value="Completed">Completed</option>
-                    <option value="Partially Paid">Partially Paid</option>
-                    <option value="Failed">Failed</option>
-                    <option value="Cancelled">Cancelled</option>
-                    <option value="Refunded">Refunded</option>
+                    {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </Field>
               </div>
@@ -276,11 +315,12 @@ export default function PaymentsPage() {
                 <h3 className="mt-1 text-xl font-bold text-slate-900">Payment transactions</h3>
               </div>
 
-              <div className="grid w-full min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
-                <input aria-label="Search payments" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search party or reference" className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 xl:min-w-[220px]" />
-                <select aria-label="Filter by direction" value={directionFilter} onChange={(event) => setDirectionFilter(event.target.value)} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All directions</option><option value="incoming">Incoming</option><option value="outgoing">Outgoing</option></select>
-                <select aria-label="Filter by method" value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All methods</option>{methods.map((method) => <option key={method} value={method}>{method}</option>)}</select>
-                <select aria-label="Filter by warehouse" value={warehouseFilter} onChange={(event) => setWarehouseFilter(event.target.value)} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All warehouses</option>{warehouses.map((warehouse) => <option key={warehouse.id || warehouse._id || warehouse.name} value={warehouse.id || warehouse._id || warehouse.name}>{warehouse.name || warehouse.warehouseName}</option>)}</select>
+              <div className="grid w-full min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+                <input aria-label="Search payments" value={query} onChange={(event) => { setQuery(event.target.value); resetPaymentPage(); }} placeholder="Search party or reference" className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 xl:min-w-[220px]" />
+                <select aria-label="Filter by direction" value={directionFilter} onChange={(event) => { setDirectionFilter(event.target.value); resetPaymentPage(); }} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All directions</option><option value="incoming">Incoming</option><option value="outgoing">Outgoing</option></select>
+                <select aria-label="Filter by method" value={methodFilter} onChange={(event) => { setMethodFilter(event.target.value); resetPaymentPage(); }} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All methods</option>{methods.map((method) => <option key={method} value={method}>{method}</option>)}</select>
+                <select aria-label="Filter by status" value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); resetPaymentPage(); }} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All statuses</option>{statuses.map((status) => <option key={status} value={status}>{status}</option>)}</select>
+                <select aria-label="Filter by warehouse" value={warehouseFilter} onChange={(event) => { setWarehouseFilter(event.target.value); resetPaymentPage(); }} className="min-w-0 rounded-xl border border-slate-200 bg-white px-2 py-2 text-sm text-slate-700"><option value="all">All warehouses</option>{warehouses.map((warehouse) => <option key={warehouse.id || warehouse._id || warehouse.name} value={warehouse.id || warehouse._id || warehouse.name}>{warehouse.name || warehouse.warehouseName}</option>)}</select>
               </div>
             </div>
 
@@ -296,7 +336,7 @@ export default function PaymentsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 bg-white">
-                    {filteredRecords.map((record) => (
+                    {visibleRecords.map((record) => (
                       <tr key={record.id} onClick={() => setSelectedRecord(record)} className={`cursor-pointer hover:bg-slate-50 ${record.id === requestedPayment || record.ref === requestedPayment ? 'bg-emerald-50' : ''}`}>
                         <td className="px-3 py-4">
                           <div className="font-medium text-slate-800">{record.party}</div>
@@ -304,11 +344,19 @@ export default function PaymentsPage() {
                         </td>
                         <td className="px-3 py-4 text-slate-700">{record.type}</td>
                         <td className="px-3 py-4 font-semibold text-slate-900">${Number(record.amount || 0).toFixed(2)}</td>
-                        <td className="px-3 py-4"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${record.status === 'Received' || record.status === 'Approved' || record.status === 'Completed' ? 'bg-emerald-100 text-emerald-700' : record.status === 'Pending' ? 'bg-amber-100 text-amber-700' : 'bg-sky-100 text-sky-700'}`}>{record.status}</span></td>
+                        <td className="px-3 py-4"><span className={`rounded-full px-2 py-1 text-xs font-semibold ${statusStyles[record.status] || 'bg-slate-100 text-slate-600'}`}>{record.status}</span></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
+                <div className="flex flex-col gap-2 border-t border-slate-100 px-3 py-3 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                  <span>{filteredRecords.length === 0 ? 'Showing 0 payments' : `Showing ${(currentPaymentPage - 1) * paymentPageSize + 1}-${Math.min(currentPaymentPage * paymentPageSize, filteredRecords.length)} of ${filteredRecords.length} payments`}</span>
+                  <div className="flex items-center gap-2">
+                    <button type="button" onClick={() => setPaymentPage((current) => Math.max(1, current - 1))} disabled={currentPaymentPage === 1} className="rounded-lg border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Previous</button>
+                    <span className="min-w-14 text-center font-semibold text-slate-700">Page {currentPaymentPage} of {paymentTotalPages}</span>
+                    <button type="button" onClick={() => setPaymentPage((current) => Math.min(paymentTotalPages, current + 1))} disabled={currentPaymentPage === paymentTotalPages} className="rounded-lg border border-slate-200 px-2.5 py-1.5 font-medium text-slate-700 disabled:cursor-not-allowed disabled:opacity-40">Next</button>
+                  </div>
+                </div>
               </div>
 
               <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -318,7 +366,18 @@ export default function PaymentsPage() {
                   <div><span className="text-slate-500">Party:</span> <span className="font-semibold text-slate-900">{selectedRecord?.party}</span></div>
                   <div><span className="text-slate-500">Amount:</span> <span className="font-semibold text-slate-900">${Number(selectedRecord?.amount || 0).toFixed(2)}</span></div>
                   <div><span className="text-slate-500">Method:</span> <span className="font-semibold text-slate-900">{selectedRecord?.method}</span></div>
-                  <div><span className="text-slate-500">Status:</span> <span className="font-semibold text-slate-900">{selectedRecord?.status}</span></div>
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-slate-500">Status:</span>
+                    <select
+                      aria-label="Change payment status"
+                      value={selectedRecord?.status || ''}
+                      onChange={(event) => handleStatusChange(event.target.value)}
+                      disabled={!selectedRecord?.apiId}
+                      className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-sm font-semibold text-slate-900 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {statuses.map((status) => <option key={status} value={status}>{status}</option>)}
+                    </select>
+                  </label>
                   <div><span className="text-slate-500">Warehouse:</span> <span className="font-semibold text-slate-900">{selectedRecord?.warehouse}</span></div>
                 </div>
               </div>

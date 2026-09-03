@@ -36,7 +36,6 @@ export default function StockTransfersPage() {
     reason: 'Stock replenishment',
   });
   const [page, setPage] = useState(1);
-  const [totalTransferCount, setTotalTransferCount] = useState(0);
   const [backendTotalPages, setBackendTotalPages] = useState(1);
   const [transferError, setTransferError] = useState('');
   const pageSize = 8;
@@ -47,23 +46,23 @@ export default function StockTransfersPage() {
         const [transferResponse, warehouseResponse, productResponse] = await Promise.all([
           apiFetch(`/stock-transfers?page=${page}&limit=${pageSize}`),
           apiFetch('/warehouses?page=1&limit=200').catch(() => apiFetch('/pos/warehouses')),
-          apiFetch('/products?page=1&limit=200'),
+          apiFetch('/products?page=1&limit=1000'),
         ]);
         const transferData = transferResponse?.items ?? transferResponse?.data?.items ?? transferResponse?.data ?? transferResponse ?? [];
         const transferItems = Array.isArray(transferData?.items) ? transferData.items : Array.isArray(transferData) ? transferData : [];
         const warehouseData = warehouseResponse?.items ?? warehouseResponse?.data?.items ?? warehouseResponse?.data ?? warehouseResponse ?? [];
         const productData = productResponse?.items ?? productResponse?.data?.items ?? productResponse?.data ?? productResponse ?? [];
         setStockTransferRecords(transferItems);
-        setTotalTransferCount(Number(transferData?.total ?? transferItems.length ?? 0));
         setBackendTotalPages(Math.max(1, Number((transferData?.totalPages ?? Math.ceil((transferData?.total ?? transferItems.length) / pageSize)) || 1)));
         setWarehouseOptions(Array.isArray(warehouseData) ? warehouseData.map((warehouse) => ({
           id: warehouse.id || warehouse._id || warehouse.code,
           name: warehouse.name || warehouse.warehouseName || warehouse.code || 'Warehouse',
         })) : []);
         setProductOptions(Array.isArray(productData) ? productData.map((product) => ({
-          id: product.id || product._id || product.sku,
+          id: product._id || product.id || product.sku,
           name: product.name || product.productName || 'Product',
           sku: product.sku || product.code || '',
+          warehouseId: product.warehouseId || '',
         })) : []);
       } catch (err) {
         console.error(err);
@@ -143,6 +142,7 @@ export default function StockTransfersPage() {
 
     const payload = {
       productId: selectedProduct?.id || draftTransfer.productId,
+      sku: selectedProduct?.sku || '',
       product: selectedProduct?.name || 'Product',
       fromWarehouseId: sourceWarehouse?.id || draftTransfer.fromWarehouse,
       toWarehouseId: destinationWarehouse?.id || draftTransfer.toWarehouse,
@@ -162,7 +162,6 @@ export default function StockTransfersPage() {
       const refreshed = await apiFetch(`/stock-transfers?page=1&limit=${pageSize}`);
       const refreshedData = refreshed?.data ?? refreshed;
       setStockTransferRecords(Array.isArray(refreshedData?.items) ? refreshedData.items : []);
-      setTotalTransferCount(Number(refreshedData?.total ?? 0));
       setBackendTotalPages(Math.max(1, Number(refreshedData?.totalPages ?? 1)));
       setDraftTransfer({ productId: '', fromWarehouse: '', toWarehouse: '', quantity: '1', reason: 'Stock replenishment' });
       setIsTransferModalOpen(false);
@@ -246,7 +245,7 @@ export default function StockTransfersPage() {
 
           <div className="overflow-x-auto">
             <table className="min-w-full text-left text-sm text-slate-700">
-              <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
+              <thead className="bg-slate-900 text-xs uppercase tracking-[0.16em] text-white">
                 <tr>
                   <th className="px-4 py-3 font-semibold">Transfer</th>
                   <th className="px-4 py-3 font-semibold">Product</th>
@@ -321,8 +320,8 @@ export default function StockTransfersPage() {
       </div>
 
       {isTransferModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <form onSubmit={handleCreateTransfer} className="w-full max-w-xl rounded-3xl bg-white p-6 shadow-2xl">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-950/40 p-4">
+          <form onSubmit={handleCreateTransfer} className="max-h-[calc(100vh-2rem)] w-full max-w-xl overflow-y-auto overscroll-contain rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl">
             <div className="mb-5 flex items-center justify-between">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Warehouse transfer</p>
@@ -342,7 +341,7 @@ export default function StockTransfersPage() {
                 >
                   <option value="">Select product</option>
                   {productOptions.map((product) => (
-                    <option key={product.id} value={product.id}>{product.name}</option>
+                    <option key={product.id} value={product.id}>{product.name}{product.sku ? ` (${product.sku})` : ''}</option>
                   ))}
                 </select>
               </label>

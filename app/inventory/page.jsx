@@ -5,6 +5,7 @@ import { useEffect, useState, useMemo } from 'react';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch } from '../lib/api.client';
 import { useToast } from '../components/ToastProvider';
+import { AlertTriangle, CheckCircle2, DollarSign, Package, Plus, RefreshCw, Search, X, Zap } from 'lucide-react';
 
 export default function InventoryPage() {
   const toast = useToast();
@@ -43,7 +44,7 @@ export default function InventoryPage() {
     try {
       const [overviewRes, productsRes, transactionsRes] = await Promise.all([
         apiFetch('/inventory').catch(() => ({})),
-        apiFetch('/products').catch(() => ({ items: [] })),
+        apiFetch('/products?page=1&limit=1000').catch(() => ({ items: [] })),
         apiFetch('/inventory/transactions?limit=50').catch(() => ({ transactions: [] })),
       ]);
       const productItems = Array.isArray(productsRes) ? productsRes : (productsRes?.items || []);
@@ -68,8 +69,12 @@ export default function InventoryPage() {
 
       setProducts(productItems);
       setAlerts(overviewRes?.alerts || []);
-      setTransfers(overviewRes?.transfers || []);
       setTransactions(transactionsRes?.transactions || overviewRes?.recentTransactions || []);
+      setTransfers(
+        Array.isArray(overviewRes?.transfers) && overviewRes.transfers.length > 0
+          ? overviewRes.transfers
+          : (transactionsRes?.transactions || overviewRes?.recentTransactions || []).filter((tx) => tx.type === 'transfer')
+      );
     } catch (err) {
       console.error('Failed to load inventory data:', err);
       toast.error('Load Error', 'Failed to fetch some inventory data.');
@@ -154,14 +159,14 @@ export default function InventoryPage() {
             className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3.5 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50 hover:text-slate-900 disabled:opacity-50"
             title="Refresh Inventory"
           >
-            <span className={`inline-block text-base ${refreshing ? 'animate-spin' : ''}`}>↻</span>
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />
             <span>Refresh</span>
           </button>
           <button
             onClick={() => handleOpenAdjust(null)}
             className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-emerald-200 transition hover:from-emerald-500 hover:to-teal-500 active:scale-[0.98]"
           >
-            <span>+</span>
+            <Plus className="h-4 w-4" />
             <span>Adjust Stock</span>
           </button>
         </div>
@@ -174,21 +179,21 @@ export default function InventoryPage() {
           value={`$${Number(summary.totalValuation || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
           subtitle={`${summary.totalStockUnits?.toLocaleString() || 0} total units`}
           accent="emerald"
-          icon="💰"
+          icon={DollarSign}
         />
         <StatCard
           label="Total Active SKUs"
           value={summary.totalProducts || products.length}
           subtitle={`${summary.healthyCount || 0} healthy stock`}
           accent="sky"
-          icon="📦"
+          icon={Package}
         />
         <StatCard
           label="Low Stock Items"
           value={summary.lowStockCount || alerts.filter(a => a.stock > 0).length}
           subtitle="At or below reorder level"
           accent="amber"
-          icon="⚠️"
+          icon={AlertTriangle}
           highlight={summary.lowStockCount > 0}
         />
         <StatCard
@@ -196,7 +201,7 @@ export default function InventoryPage() {
           value={summary.outOfStockCount || alerts.filter(a => (a.stock || 0) <= 0).length}
           subtitle="Requires immediate restock"
           accent="rose"
-          icon="🚨"
+          icon={AlertTriangle}
           highlight={summary.outOfStockCount > 0}
         />
       </div>
@@ -239,7 +244,7 @@ export default function InventoryPage() {
             <div className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
               <div className="relative flex-1">
                 <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
-                  🔍
+                  <Search className="h-4 w-4" />
                 </span>
                 <input
                   type="text"
@@ -256,7 +261,7 @@ export default function InventoryPage() {
                     onClick={() => setSearchQuery('')}
                     className="absolute inset-y-0 right-0 flex items-center pr-3 text-xs text-slate-400 hover:text-slate-600"
                   >
-                    Clear
+                    <X className="h-4 w-4" />
                   </button>
                 )}
               </div>
@@ -301,9 +306,9 @@ export default function InventoryPage() {
 
             {/* Products Table */}
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <div className="overflow-x-auto">
+              <div className="max-h-[34rem] overflow-auto">
                 <table className="w-full text-left text-sm text-slate-600">
-                  <thead className="border-b border-slate-200 bg-slate-50/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
+                  <thead className="sticky top-0 z-10 border-b border-slate-200 bg-slate-50/95 text-xs font-semibold uppercase tracking-wider text-slate-500 backdrop-blur">
                     <tr>
                       <th className="px-5 py-3.5">Product & SKU</th>
                       <th className="px-5 py-3.5">Category</th>
@@ -320,7 +325,7 @@ export default function InventoryPage() {
                       <tr>
                         <td colSpan={8} className="p-8 text-center text-slate-500">
                           <div className="flex items-center justify-center gap-2">
-                            <span className="animate-spin text-lg">↻</span>
+                            <RefreshCw className="h-4 w-4 animate-spin" />
                             <span>Loading inventory catalogue...</span>
                           </div>
                         </td>
@@ -390,7 +395,7 @@ export default function InventoryPage() {
                                 onClick={() => handleOpenAdjust(p)}
                                 className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50 hover:text-emerald-700 active:scale-95"
                               >
-                                <span>⚡</span>
+                                <Zap className="h-3.5 w-3.5" />
                                 <span>Adjust</span>
                               </button>
                             </td>
@@ -432,7 +437,7 @@ export default function InventoryPage() {
           <section className="space-y-4">
             <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-4 text-sm text-amber-900">
               <div className="flex items-center gap-2 font-semibold">
-                <span>⚠️ Reorder & Replenishment Monitor</span>
+                <span className="flex items-center gap-2"><AlertTriangle className="h-4 w-4" />Reorder & Replenishment Monitor</span>
               </div>
               <p className="mt-1 text-xs text-amber-800">
                 The following products have dropped to or below their safe reorder thresholds. Immediate replenishment is advised to avoid stockouts.
@@ -442,7 +447,7 @@ export default function InventoryPage() {
             {alerts.length === 0 ? (
               <div className="rounded-3xl border border-slate-200 bg-white p-12 text-center text-slate-500">
                 <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-2xl text-emerald-600">
-                  ✓
+                  <CheckCircle2 className="h-7 w-7" />
                 </div>
                 <h4 className="mt-4 text-lg font-bold text-slate-800">All Stock Levels Healthy</h4>
                 <p className="mt-1 text-sm text-slate-500">No products are currently at or below their reorder points.</p>
@@ -664,12 +669,17 @@ export default function InventoryPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {transfers.map((move) => (
-                  <div key={move._id} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                {transfers.map((move) => {
+                  const firstItem = Array.isArray(move.items) ? move.items[0] : null;
+                  const product = move.productId || move.product || {};
+                  const movementName = move.item || firstItem?.name || product.name || firstItem?.sku || product.sku || 'Item Movement';
+                  const movementQty = Number(move.qty || firstItem?.qty || product.qty || (Array.isArray(move.items) ? move.items.reduce((sum, item) => sum + Number(item.qty || 0), 0) : 0));
+                  return (
+                  <div key={move._id || move.transferId} className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
                     <div className="flex items-start justify-between">
                       <div>
-                        <h4 className="font-bold text-slate-900">{move.item || 'Item Movement'}</h4>
-                        <p className="text-xs text-slate-400">Qty: {move.qty} units</p>
+                        <h4 className="font-bold text-slate-900">{movementName}</h4>
+                        <p className="text-xs text-slate-400">{move.transferId || product.sku || ''}{move.transferId || product.sku ? ' · ' : ''}Qty: {movementQty} units</p>
                       </div>
                       <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-700">
                         {move.status || 'Completed'}
@@ -688,10 +698,11 @@ export default function InventoryPage() {
                     </div>
 
                     <div className="mt-3 text-right text-[11px] text-slate-400">
-                      {new Date(move.createdAt).toLocaleString()}
+                      {move.createdAt ? new Date(move.createdAt).toLocaleString() : 'Date unavailable'}
                     </div>
                   </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </section>
@@ -711,7 +722,7 @@ export default function InventoryPage() {
   );
 }
 
-function StatCard({ label, value, subtitle, accent, icon, highlight }) {
+function StatCard({ label, value, subtitle, accent, icon: Icon, highlight }) {
   const accentStyles = {
     emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
     sky: 'bg-sky-50 text-sky-700 border-sky-100',
@@ -728,7 +739,7 @@ function StatCard({ label, value, subtitle, accent, icon, highlight }) {
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">{label}</p>
         <span className={`flex h-8 w-8 items-center justify-center rounded-xl border text-sm ${accentStyles[accent]}`}>
-          {icon}
+          <Icon className="h-4 w-4" />
         </span>
       </div>
       <div className="mt-3">
@@ -834,8 +845,8 @@ function StockAdjustmentModal({ products, selectedProduct, onClose, onSuccess })
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl transition">
+    <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto overscroll-contain bg-slate-900/50 p-4 backdrop-blur-sm">
+      <div className="max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto overscroll-contain rounded-3xl border border-slate-200 bg-white p-6 shadow-2xl transition">
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div>
             <h3 className="text-lg font-bold text-slate-900">Adjust Inventory Stock</h3>

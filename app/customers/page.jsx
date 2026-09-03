@@ -16,6 +16,10 @@ const defaultForm = {
   status: 'Active',
 };
 
+function generateCustomerCode() {
+  return `C-${Date.now().toString().slice(-8)}`;
+}
+
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -108,11 +112,11 @@ export default function CustomersPage() {
         <div className="flex flex-col gap-3 border-b border-slate-100 p-4 md:flex-row md:items-center md:justify-between">
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => { setQuery(event.target.value); setPage(1); }}
             placeholder="Search customer, code, email or phone"
             className="w-full rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 md:max-w-xs"
           />
-          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
+          <select value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value); setPage(1); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700">
             <option value="all">All statuses</option>
             <option value="Active">Active</option>
             <option value="Inactive">Inactive</option>
@@ -128,6 +132,9 @@ export default function CustomersPage() {
                 <th className="px-4 py-3 font-semibold">Code</th>
                 <th className="px-4 py-3 font-semibold">Contact</th>
                 <th className="px-4 py-3 font-semibold">Credit limit</th>
+                <th className="px-4 py-3 font-semibold">Top spent</th>
+                <th className="px-4 py-3 font-semibold">Last order</th>
+                <th className="px-4 py-3 font-semibold">Last order date</th>
                 <th className="px-4 py-3 font-semibold">Outstanding</th>
                 <th className="px-4 py-3 font-semibold">Status</th>
                 <th className="px-4 py-3 font-semibold text-right">Actions</th>
@@ -135,9 +142,9 @@ export default function CustomersPage() {
             </thead>
             <tbody className="divide-y divide-slate-100 bg-white">
               {loading ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">Loading...</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-500">Loading...</td></tr>
               ) : filteredCustomers.length === 0 ? (
-                <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">No customers match the active filters.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-10 text-center text-slate-500">No customers match the active filters.</td></tr>
               ) : (
                 filteredCustomers.map((customer) => (
                   <tr key={customer.id || customer._id} className="hover:bg-slate-50">
@@ -151,6 +158,9 @@ export default function CustomersPage() {
                       <div className="text-xs text-slate-500">{customer.email}</div>
                     </td>
                     <td className="px-4 py-4 font-semibold text-slate-900">${Number(customer.creditLimit || 0).toLocaleString()}</td>
+                    <td className="px-4 py-4 font-semibold text-emerald-700">${Number(customer.totalSpent || 0).toLocaleString()}</td>
+                    <td className="px-4 py-4 text-xs font-medium text-slate-700">{customer.lastOrder || 'No orders yet'}</td>
+                    <td className="px-4 py-4 text-xs text-slate-500">{customer.lastOrderDate ? new Date(customer.lastOrderDate).toLocaleDateString() : '—'}</td>
                     <td className="px-4 py-4 font-semibold text-slate-900">${Number(customer.outstandingBalance || 0).toLocaleString()}</td>
                     <td className="px-4 py-4">
                       <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${customer.status === 'Active' ? 'bg-emerald-100 text-emerald-700' : customer.status === 'Blocked' ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'}`}>
@@ -170,9 +180,9 @@ export default function CustomersPage() {
           </table>
         </div>
 
-        {!loading && totalPages > 1 && (
+        {!loading && (
           <div className="flex items-center justify-between border-t border-slate-100 px-4 py-3 text-sm text-slate-600">
-            <span>Page {page} of {totalPages}</span>
+            <span>{filteredCustomers.length === 0 ? 'Showing 0 customers' : `Showing page ${page} of ${totalPages}`}</span>
             <div className="flex items-center gap-2">
               <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} disabled={page === 1} className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:opacity-50">Previous</button>
               <button type="button" onClick={() => setPage((current) => Math.min(totalPages, current + 1))} disabled={page >= totalPages} className="rounded-lg border border-slate-200 px-3 py-1.5 disabled:opacity-50">Next</button>
@@ -181,7 +191,7 @@ export default function CustomersPage() {
         )}
       </section>
 
-      {formOpen && <CustomerForm initial={editing || defaultForm} onClose={() => { setFormOpen(false); setEditing(null); load(); }} />}
+      {formOpen && <CustomerForm initial={editing || { ...defaultForm, customerCode: generateCustomerCode() }} onClose={() => { setFormOpen(false); setEditing(null); load(); }} />}
     </ModuleLayout>
   );
 }
@@ -243,7 +253,10 @@ function CustomerForm({ initial = defaultForm, onClose = () => {} }) {
         <div className="grid gap-4 md:grid-cols-2">
           <label className="block text-sm text-slate-600">
             <span className="mb-1.5 block">Customer code</span>
-            <input value={form.customerCode} onChange={(event) => setForm({ ...form, customerCode: event.target.value })} className="w-full rounded-xl border px-3 py-2.5" />
+           <div className="flex gap-2">
+             <input value={form.customerCode} onChange={(event) => setForm({ ...form, customerCode: event.target.value })} className="min-w-0 flex-1 rounded-xl border px-3 py-2.5" placeholder="Auto-generated if blank" />
+             <button type="button" onClick={() => setForm({ ...form, customerCode: generateCustomerCode() })} className="rounded-xl border border-violet-200 px-3 text-xs font-semibold text-violet-700">Auto</button>
+           </div>
           </label>
           <label className="block text-sm text-slate-600">
             <span className="mb-1.5 block">Status</span>

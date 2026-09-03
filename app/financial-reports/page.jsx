@@ -14,12 +14,13 @@ export default function FinancialReportsPage() {
   const [warehouse, setWarehouse] = useState('all');
   const [pAndLRows, setPAndLRows] = useState([]);
   const [cashFlow, setCashFlow] = useState([]);
+  const [cashSummary, setCashSummary] = useState({ incoming: 0, outgoing: 0, netCash: 0, revenue: 0, expenses: 0 });
   const [warehouseMetrics, setWarehouseMetrics] = useState([]);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const response = await apiFetch('/financial-reports');
+        const response = await apiFetch(`/financial-reports?range=${range}&warehouse=${encodeURIComponent(warehouse === 'all' ? '' : warehouse)}`);
         const data = response?.data ?? response ?? {};
         const rawWarehouseMetrics = Array.isArray(data.warehouseMetrics) ? data.warehouseMetrics : Array.isArray(data.warehouseData) ? data.warehouseData : [];
         const nextWarehouseMetrics = rawWarehouseMetrics.map((item) => ({
@@ -39,29 +40,38 @@ export default function FinancialReportsPage() {
           month: point?.month || point?.label || ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul'][index] || `M${index + 1}`,
           incoming: toNumber(point?.incoming ?? point?.inflow ?? point?.income ?? 0),
           outgoing: toNumber(point?.outgoing ?? point?.outflow ?? point?.expense ?? 0),
+          net: toNumber(point?.net ?? (toNumber(point?.incoming ?? point?.inflow ?? 0) - toNumber(point?.outgoing ?? point?.outflow ?? 0))),
         }));
         setPAndLRows(nextPAndLRows);
         setCashFlow(nextCashFlow);
+        setCashSummary({
+          incoming: toNumber(data.summary?.incoming ?? nextCashFlow.reduce((sum, item) => sum + item.incoming, 0)),
+          outgoing: toNumber(data.summary?.outgoing ?? nextCashFlow.reduce((sum, item) => sum + item.outgoing, 0)),
+          netCash: toNumber(data.summary?.netCash ?? nextCashFlow.reduce((sum, item) => sum + item.net, 0)),
+          revenue: toNumber(data.summary?.revenue),
+          expenses: toNumber(data.summary?.expenses),
+        });
         setWarehouseMetrics(nextWarehouseMetrics);
       } catch (err) {
         console.error(err);
         setPAndLRows([]);
         setCashFlow([]);
+        setCashSummary({ incoming: 0, outgoing: 0, netCash: 0, revenue: 0, expenses: 0 });
         setWarehouseMetrics([]);
       }
     }
 
     loadData();
-  }, []);
+  }, [range, warehouse]);
 
   const visibleMetrics = useMemo(() => {
     if (warehouse === 'all') return warehouseMetrics;
     return warehouseMetrics.filter((item) => (item.name || item.warehouse) === warehouse);
   }, [warehouseMetrics, warehouse]);
 
-  const totalRevenue = visibleMetrics.reduce((sum, item) => sum + toNumber(item.revenue), 0);
-  const totalExpenses = visibleMetrics.reduce((sum, item) => sum + toNumber(item.expenses), 0);
-  const totalProfit = visibleMetrics.reduce((sum, item) => sum + toNumber(item.profit), 0);
+  const totalRevenue = cashSummary.revenue || visibleMetrics.reduce((sum, item) => sum + toNumber(item.revenue), 0);
+  const totalExpenses = cashSummary.expenses || visibleMetrics.reduce((sum, item) => sum + toNumber(item.expenses), 0);
+  const totalProfit = totalRevenue - totalExpenses;
 
   return (
     <ModuleLayout
@@ -74,6 +84,7 @@ export default function FinancialReportsPage() {
             value={range}
             onChange={(event) => setRange(event.target.value)}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+            aria-label="Filter financial reports by time period"
           >
             <option value="today">Today</option>
             <option value="week">This week</option>
@@ -86,6 +97,7 @@ export default function FinancialReportsPage() {
             value={warehouse}
             onChange={(event) => setWarehouse(event.target.value)}
             className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 focus:border-emerald-500 focus:outline-none"
+            aria-label="Filter financial reports by warehouse"
           >
             <option value="all">All warehouses</option>
             {warehouseMetrics.map((item) => (
@@ -104,16 +116,16 @@ export default function FinancialReportsPage() {
         </div>
 
         <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-          <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="mb-4 flex items-center justify-between">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">P&amp;L</p>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">P&amp;L</p>
                 <h3 className="mt-1 text-xl font-bold text-slate-900">Income statement</h3>
               </div>
               <span className="rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-700">Updated</span>
             </div>
 
-            <div className="overflow-hidden rounded-2xl border border-slate-200">
+            <div className="overflow-x-auto rounded-2xl border border-slate-200">
               <table className="min-w-full text-left text-sm text-slate-700">
                 <thead className="bg-slate-50 text-xs uppercase tracking-[0.18em] text-slate-500">
                   <tr>
@@ -136,20 +148,35 @@ export default function FinancialReportsPage() {
           </section>
 
           <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Cash flow</p>
-            <div className="mt-5 flex h-56 items-end gap-3">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-emerald-600">Cash flow</p>
+                <h3 className="mt-1 text-xl font-bold text-slate-900">Money in vs. money out</h3>
+                <p className="mt-1 text-xs text-slate-500">Recorded payments grouped by day or month.</p>
+              </div>
+              <p className={`text-right text-sm font-bold ${cashSummary.netCash >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                Net {formatCurrency(cashSummary.netCash)}
+                <span className="block text-xs font-normal text-slate-500">Selected period</span>
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-4 text-xs font-medium text-slate-600" aria-label="Cash flow legend">
+              <span className="flex items-center gap-2 text-slate-600"><i className="h-3 w-3 rounded-sm bg-emerald-500" />Incoming ({formatCurrency(cashSummary.incoming)})</span>
+              <span className="flex items-center gap-2 text-slate-600"><i className="h-3 w-3 rounded-sm bg-slate-400" />Outgoing ({formatCurrency(cashSummary.outgoing)})</span>
+            </div>
+            <div className="mt-5 flex h-56 items-end gap-3 rounded-2xl border border-slate-200 bg-slate-50 px-3 pt-4">
               {cashFlow.length > 0 ? cashFlow.map((point) => {
-                const maxValue = Math.max(...cashFlow.map((item) => Number(item.incoming || item.inflow || 0) + Number(item.outgoing || item.outflow || 0)), 1);
-                const incomingHeight = (Number(point.incoming || point.inflow || 0) / maxValue) * 100;
-                const outgoingHeight = (Number(point.outgoing || point.outflow || 0) / maxValue) * 100;
+                const maxValue = Math.max(...cashFlow.map((item) => Math.max(item.incoming, item.outgoing)), 1);
+                const incomingHeight = (point.incoming / maxValue) * 100;
+                const outgoingHeight = (point.outgoing / maxValue) * 100;
 
                 return (
-                  <div key={point.month} className="flex flex-1 flex-col items-center gap-2">
+                  <div key={point.month} className="flex min-w-0 flex-1 flex-col items-center gap-2">
                     <div className="flex h-40 w-full items-end justify-center gap-1">
-                      <div className="w-1/2 rounded-t-xl bg-emerald-500" style={{ height: `${Math.max(8, incomingHeight)}%` }} />
-                      <div className="w-1/2 rounded-t-xl bg-slate-300" style={{ height: `${Math.max(8, outgoingHeight)}%` }} />
+                      <div title={`Incoming: ${formatCurrency(point.incoming)}`} aria-label={`${point.month} incoming: ${formatCurrency(point.incoming)}`} className="w-1/2 rounded-t-xl bg-emerald-500" style={{ height: `${Math.max(point.incoming ? 8 : 0, incomingHeight)}%` }} />
+                      <div title={`Outgoing: ${formatCurrency(point.outgoing)}`} aria-label={`${point.month} outgoing: ${formatCurrency(point.outgoing)}`} className="w-1/2 rounded-t-xl bg-slate-300" style={{ height: `${Math.max(point.outgoing ? 8 : 0, outgoingHeight)}%` }} />
                     </div>
                     <span className="text-[10px] font-medium text-slate-500">{point.month}</span>
+                    <span className={`text-[10px] ${point.net >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>{formatCurrency(point.net)} net</span>
                   </div>
                 );
               }) : <div className="flex h-full w-full items-center justify-center text-sm text-slate-500">No cash flow data available.</div>}
@@ -184,6 +211,10 @@ export default function FinancialReportsPage() {
       </div>
     </ModuleLayout>
   );
+}
+
+function formatCurrency(value) {
+  return `$${toNumber(value).toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
 }
 
 function SummaryCard({ label, value, subtitle, accent }) {

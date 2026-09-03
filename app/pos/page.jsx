@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState, useEffect } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { ModuleLayout } from '../components/ModuleLayout';
 import { apiFetch, getStoredUser } from '../lib/api.client';
@@ -15,6 +15,8 @@ export default function PosPage() {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [addingCustomer, setAddingCustomer] = useState(false);
   const [newCustomerName, setNewCustomerName] = useState('');
+  const [customerFeedback, setCustomerFeedback] = useState('');
+  const newCustomerInputRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const PAYMENT_METHODS = ['Cash','Card','Mobile Wallet','Bank Transfer','Cheque','Other'];
@@ -24,31 +26,11 @@ export default function PosPage() {
   const [category, setCategory] = useState('all');
   const [loadError, setLoadError] = useState('');
   const [completedSale, setCompletedSale] = useState(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [drawerFloat, setDrawerFloat] = useState('');
-  const [drawerState] = useState(() => {
-    if (typeof window === 'undefined') return { balance: 0, action: 'open' };
-    const savedDrawer = window.localStorage.getItem('pos-drawer');
-    if (!savedDrawer) return { balance: 0, action: 'open' };
-    try {
-      const parsed = JSON.parse(savedDrawer);
-      return { balance: Number(parsed.balance) || 0, action: parsed.isOpen ? 'close' : 'open' };
-    } catch (err) {
-      console.error('Failed to restore cash drawer state:', err);
-      return { balance: 0, action: 'open' };
-    }
-  });
-  const [drawerBalance, setDrawerBalance] = useState(drawerState.balance);
-  const [drawerAction, setDrawerAction] = useState(drawerState.action);
   const [currentUser] = useState(() => getStoredUser());
-  const drawerIsOpen = drawerAction === 'close';
 
   useEffect(() => {
-    window.localStorage.setItem('pos-drawer', JSON.stringify({
-      balance: drawerBalance,
-      isOpen: drawerIsOpen,
-    }));
-  }, [drawerBalance, drawerIsOpen]);
+    if (addingCustomer) newCustomerInputRef.current?.focus();
+  }, [addingCustomer]);
 
   useEffect(() => {
     async function loadProducts() {
@@ -166,11 +148,6 @@ export default function PosPage() {
       alert('Select the branch handling this sale.');
       return;
     }
-    if (paymentMethod === 'Cash' && !drawerIsOpen) {
-      alert('Open the cash drawer before accepting a cash checkout.');
-      return;
-    }
-
     try {
       setCheckoutLoading(true);
 
@@ -201,8 +178,6 @@ export default function PosPage() {
       setCart([]);
       setCashReceived('');
       setCompletedSale(response);
-      if (paymentMethod === 'Cash') setDrawerBalance((balance) => balance + Number(cashReceived || 0));
-
       const updatedProducts = await apiFetch('/pos/items');
       setProducts(Array.isArray(updatedProducts) ? updatedProducts : (updatedProducts?.items || []));
     } catch (err) {
@@ -247,20 +222,36 @@ export default function PosPage() {
   });
   const categories = [...new Set(products.map((product) => product.category).filter(Boolean))];
 
+  async function handleAddCustomer(event) {
+    event.preventDefault();
+    const name = newCustomerName.trim();
+    if (!name) {
+      setCustomerFeedback('Enter a customer name to continue.');
+      newCustomerInputRef.current?.focus();
+      return;
+    }
+    try {
+      setCustomerFeedback('');
+      const response = await apiFetch('/customers', { method: 'POST', body: JSON.stringify({ name }) });
+      const created = response?.customer || response?.data || response;
+      const createdId = created?._id || created?.id;
+      if (!createdId) throw new Error('The customer was created without an identifier.');
+      setCustomers((prev) => [...prev, created]);
+      setSelectedCustomer(String(createdId));
+      setNewCustomerName('');
+      setAddingCustomer(false);
+      setCustomerFeedback(`${name} was added and selected.`);
+    } catch (err) {
+      setCustomerFeedback(err?.message || 'Unable to add customer. Please try again.');
+      newCustomerInputRef.current?.focus();
+    }
+  }
+
   return (
     <ModuleLayout
       title="POS"
       subtitle="Process quick purchases and manage the customer checkout flow."
       allowedRoles={['owner', 'admin', 'cashier']}
-      headerActions={
-        <button
-          type="button"
-          onClick={() => setDrawerOpen(true)}
-          className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-500"
-        >
-          Open drawer
-        </button>
-      }
     >
       {loadError && (
         <div role="alert" className="mb-6 flex flex-col gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900 sm:flex-row sm:items-center sm:justify-between">
@@ -273,7 +264,7 @@ export default function PosPage() {
           <div className="rounded-2xl bg-slate-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Cashier</p>
             <p className="mt-1 font-semibold text-slate-900">{currentUser?.name || currentUser?.email || 'Current cashier'}</p>
-            <p className="text-xs text-slate-500">Register #01 · {drawerIsOpen ? 'Open' : 'Closed'}</p>
+            <p className="text-xs text-slate-500">Register #01</p>
           </div>
           <div className="rounded-2xl bg-slate-50 px-4 py-3">
             <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-400">Customer</p>
@@ -338,6 +329,7 @@ export default function PosPage() {
                   type="button"
                   disabled={Number(product.stock || 0) <= 0}
                   onClick={() => addToCart(product)}
+                  aria-label={`Add ${product.name} to cart`}
                   className="rounded-2xl border border-slate-200 bg-gradient-to-br from-white to-slate-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-sky-300 hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <div className="flex items-center justify-between">
@@ -384,54 +376,35 @@ export default function PosPage() {
           </div>
 
           <div className="mb-4">
-            <label className="text-sm text-slate-600">Customer</label>
+            <label htmlFor="pos-customer" className="text-sm font-semibold text-slate-700">Customer</label>
             <div className="mt-2 flex gap-2">
-              <select value={selectedCustomer || ''} onChange={(e)=>setSelectedCustomer(e.target.value)} className="rounded-md border px-3 py-2">
+              <select id="pos-customer" value={selectedCustomer || ''} onChange={(e)=>setSelectedCustomer(e.target.value)} className="min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100">
                 <option value="">Walk-in / Guest</option>
                 {customers.map(c=> <option key={c._id||c.id} value={c._id||c.id}>{c.name}</option>)}
               </select>
-              <button type="button" onClick={()=>setAddingCustomer(true)} className="rounded-md border px-3 py-2 text-sm">Add</button>
+              <button type="button" onClick={()=>{ setCustomerFeedback(''); setAddingCustomer(true); }} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold hover:border-emerald-300 focus:outline-none focus:ring-2 focus:ring-emerald-100">Add customer</button>
             </div>
 
-            {paymentMethod === 'Cash' && (
-              <div className="mb-4 grid grid-cols-2 gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
-                <label className="text-sm font-medium text-slate-700">
-                  Cash received
-                  <input type="number" min="0" step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} placeholder={total.toFixed(2)} className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
-                </label>
-                <div>
-                  <p className="text-sm font-medium text-slate-700">Change due</p>
-                  <p className="mt-2 text-2xl font-bold text-emerald-700">${changeDue.toFixed(2)}</p>
-                </div>
-              </div>
-            )}
-
             {addingCustomer && (
-              <div className="mt-3 rounded-2xl bg-white p-3">
-                <label className="text-sm text-slate-600">Name</label>
-                <input value={newCustomerName} onChange={(e)=>setNewCustomerName(e.target.value)} className="mt-2 w-full rounded-md border px-3 py-2" />
+              <form onSubmit={handleAddCustomer} className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3" aria-label="Add customer">
+                <p className="text-sm font-semibold text-slate-800">Add a new customer</p>
+                <label htmlFor="new-customer-name" className="mt-3 block text-sm text-slate-600">Full name</label>
+                <input id="new-customer-name" ref={newCustomerInputRef} value={newCustomerName} onChange={(e)=>{ setNewCustomerName(e.target.value); setCustomerFeedback(''); }} className="mt-2 w-full rounded-xl border border-slate-200 px-3 py-2.5 focus:border-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-100" autoComplete="name" required aria-describedby={customerFeedback ? 'customer-feedback' : undefined} />
+                {customerFeedback && <p id="customer-feedback" role="status" className="mt-2 text-sm text-amber-700">{customerFeedback}</p>}
                 <div className="mt-3 flex gap-2">
-                  <button type="button" onClick={async ()=>{
-                    if(!newCustomerName.trim()) return alert('Enter name');
-                    try{
-                      const created = await apiFetch('/customers', { method: 'POST', body: JSON.stringify({ name: newCustomerName.trim() }) });
-                      setCustomers(prev=>[...prev, created]);
-                      setSelectedCustomer(created._id||created.id);
-                      setNewCustomerName('');
-                      setAddingCustomer(false);
-                    }catch(err){ alert(err?.message||'Failed'); }
-                  }} className="rounded-md bg-emerald-600 px-3 py-2 text-white">Save</button>
-                  <button type="button" onClick={()=>{ setAddingCustomer(false); setNewCustomerName(''); }} className="rounded-md border px-3 py-2">Cancel</button>
+                  <button type="submit" className="rounded-xl bg-emerald-600 px-3 py-2 text-sm font-semibold text-white hover:bg-emerald-500 focus:outline-none focus:ring-2 focus:ring-emerald-200">Save customer</button>
+                  <button type="button" onClick={()=>{ setAddingCustomer(false); setNewCustomerName(''); setCustomerFeedback(''); }} className="rounded-xl border border-slate-200 px-3 py-2 text-sm font-semibold focus:outline-none focus:ring-2 focus:ring-slate-200">Cancel</button>
                 </div>
-              </div>
+              </form>
             )}
+            {customerFeedback && !addingCustomer && <p role="status" className="mt-2 text-sm text-emerald-700">{customerFeedback}</p>}
           </div>
 
           <div className="mb-4">
-            <label className="text-sm text-slate-600">Payment method</label>
-            <div className="mt-2 flex gap-2 flex-wrap">
+            <p id="payment-method-label" className="text-sm text-slate-600">Payment method</p>
+            <div className="mt-2 flex gap-2 flex-wrap" role="radiogroup" aria-labelledby="payment-method-label">
               {PAYMENT_METHODS.map(m=> (
-                <button key={m} type="button" onClick={()=>setPaymentMethod(m)} className={`rounded-full px-3 py-1 text-sm ${paymentMethod===m? 'bg-emerald-600 text-white' : 'border bg-white'}`}>
+                <button key={m} type="button" role="radio" aria-checked={paymentMethod===m} onClick={()=>setPaymentMethod(m)} className={`rounded-full px-3 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-300 ${paymentMethod===m? 'bg-emerald-600 text-white' : 'border bg-white'}`}>
                   {m}
                 </button>
               ))}
@@ -467,6 +440,7 @@ export default function PosPage() {
                       onClick={() =>
                         adjustQuantity(item._id || item.id || item.sku, -1)
                       }
+                      aria-label={`Decrease ${item.name || 'item'} quantity`}
                       className="h-7 w-7 rounded-full bg-slate-100 text-lg text-slate-700 transition hover:bg-slate-200"
                     >
                       −
@@ -481,6 +455,7 @@ export default function PosPage() {
                       onClick={() =>
                         adjustQuantity(item._id || item.id || item.sku, 1)
                       }
+                      aria-label={`Increase ${item.name || 'item'} quantity`}
                       className="h-7 w-7 rounded-full bg-slate-100 text-lg text-slate-700 transition hover:bg-slate-200"
                     >
                       +
@@ -508,6 +483,19 @@ export default function PosPage() {
               <span>${total.toFixed(2)}</span>
             </div>
           </div>
+
+          {paymentMethod === 'Cash' && (
+            <div className="mt-3 grid grid-cols-2 gap-3 rounded-2xl border border-emerald-100 bg-emerald-50 p-3">
+              <label className="text-sm font-medium text-slate-700">
+                Cash received
+                <input type="number" min="0" step="0.01" value={cashReceived} onChange={(event) => setCashReceived(event.target.value)} placeholder={total.toFixed(2)} className="mt-1 w-full rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-emerald-200" />
+              </label>
+              <div>
+                <p className="text-sm font-medium text-slate-700">Change due</p>
+                <p className="mt-2 text-2xl font-bold text-emerald-700">${changeDue.toFixed(2)}</p>
+              </div>
+            </div>
+          )}
 
           {/* Checkout */}
           <div className="mt-6 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-end">
@@ -542,40 +530,6 @@ export default function PosPage() {
         </aside>
       </div>
 
-      {drawerOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
-          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Cash drawer</p>
-                <h3 className="mt-1 text-xl font-bold text-slate-900">Drawer status</h3>
-              </div>
-              <button type="button" onClick={() => setDrawerOpen(false)} className="rounded-lg border border-slate-200 px-3 py-2 text-sm font-medium text-slate-700">Close</button>
-            </div>
-
-            <div className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
-              <p className="font-semibold">{drawerIsOpen ? 'Drawer is open.' : 'Drawer is closed.'}</p>
-              <p className="mt-1">Current cash balance: ${Number(drawerBalance).toFixed(2)}</p>
-            </div>
-
-            <div className="mt-5 flex gap-3">
-              <div className="flex-1">
-                <label htmlFor="drawer-float" className="text-xs font-semibold text-slate-600">{drawerAction === 'open' ? 'Opening float' : 'Closing cash counted'}</label>
-                <input id="drawer-float" type="number" min="0" step="0.01" value={drawerFloat} onChange={(event) => setDrawerFloat(event.target.value)} placeholder="0.00" className="mt-1 w-full rounded-xl border border-slate-200 px-3 py-2.5 text-sm" />
-              </div>
-              <button type="button" onClick={() => {
-                const amount = Number(drawerFloat);
-                if (!Number.isFinite(amount) || amount < 0) return alert('Enter a valid cash amount.');
-                setDrawerBalance(amount);
-                setDrawerFloat('');
-                setDrawerAction(drawerAction === 'open' ? 'close' : 'open');
-                setDrawerOpen(false);
-              }} className="self-end rounded-xl bg-sky-600 px-4 py-2.5 text-sm font-semibold text-white">{drawerAction === 'open' ? 'Open drawer' : 'Close drawer'}</button>
-              <button type="button" onClick={() => setDrawerOpen(false)} className="flex-1 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-semibold text-slate-700">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
     </ModuleLayout>
   );
 }
